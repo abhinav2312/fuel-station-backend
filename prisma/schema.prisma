@@ -179,8 +179,8 @@ model AuditLog {
   action     String
   entityType String
   entityId   Int
-  oldValues  Json?
-  newValues  Json?
+  oldValues  String?  // Changed from Json to String for database compatibility
+  newValues  String?  // Changed from Json to String for database compatibility
   reason     String?
   timestamp  DateTime @default(now())
   userId     Int?

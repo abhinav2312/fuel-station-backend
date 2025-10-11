@@ -54,18 +54,18 @@ router.post('/update-capacity', async (req, res) => {
                     action: 'TANK_CAPACITY_UPDATE',
                     entityType: 'Tank',
                     entityId: tankId,
-                    oldValues: {
+                    oldValues: JSON.stringify({
                         capacity: currentTank.capacityLit,
                         level: currentTank.currentLevel,
                         percentage: (currentTank.currentLevel / currentTank.capacityLit) * 100
-                    },
-                    newValues: {
+                    }),
+                    newValues: JSON.stringify({
                         capacity: newCapacity,
                         level: currentTank.currentLevel,
                         percentage: newPercentage
                     },
-                    reason: reason || 'Capacity update',
-                    timestamp: new Date()
+                        reason: reason || 'Capacity update',
+                        timestamp: new Date()
                 }
             });
 
