@@ -1,7 +1,7 @@
 {
     "name": "fuel-station-backend",
-    "version": "1.0.0",
-    "description": "Fuel Station Management Backend",
+    "version": "1.0.1",
+    "description": "Fuel Station Management Backend API",
     "main": "dist/index.js",
     "scripts": {
         "start": "node dist/index.js",
