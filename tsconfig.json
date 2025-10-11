@@ -1,27 +1,22 @@
 {
     "compilerOptions": {
         "target": "ES2020",
-        "module": "ES2020",
+        "module": "CommonJS",
         "moduleResolution": "Node",
         "outDir": "dist",
         "rootDir": "src",
         "esModuleInterop": true,
-        "forceConsistentCasingInFileNames": true,
-        "strict": false,
+        "allowSyntheticDefaultImports": true,
         "skipLibCheck": true,
+        "strict": false,
         "noImplicitAny": false,
         "noImplicitReturns": false,
         "noImplicitThis": false,
         "noUnusedLocals": false,
         "noUnusedParameters": false,
-        "noImplicitOverride": false,
-        "noPropertyAccessFromIndexSignature": false,
-        "noUncheckedIndexedAccess": false,
-        "exactOptionalPropertyTypes": false,
-        "noFallthroughCasesInSwitch": false,
-        "noUncheckedIndexedAccess": false,
         "allowUnusedLabels": true,
-        "allowUnreachableCode": true
+        "allowUnreachableCode": true,
+        "noEmitOnError": false
     },
     "include": [
         "src"
