@@ -63,9 +63,9 @@ router.post('/update-capacity', async (req, res) => {
                         capacity: newCapacity,
                         level: currentTank.currentLevel,
                         percentage: newPercentage
-                    },
-                        reason: reason || 'Capacity update',
-                        timestamp: new Date()
+                    }),
+                    reason: reason || 'Capacity update',
+                    timestamp: new Date()
                 }
             });
 
