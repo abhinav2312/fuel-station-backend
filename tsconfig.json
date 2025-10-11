@@ -21,9 +21,7 @@
         "noFallthroughCasesInSwitch": false,
         "noUncheckedIndexedAccess": false,
         "allowUnusedLabels": true,
-        "allowUnreachableCode": true,
-        "suppressImplicitAnyIndexErrors": true,
-        "suppressExcessPropertyErrors": true
+        "allowUnreachableCode": true
     },
     "include": [
         "src"
