@@ -13,7 +13,17 @@
         "noImplicitReturns": false,
         "noImplicitThis": false,
         "noUnusedLocals": false,
-        "noUnusedParameters": false
+        "noUnusedParameters": false,
+        "noImplicitOverride": false,
+        "noPropertyAccessFromIndexSignature": false,
+        "noUncheckedIndexedAccess": false,
+        "exactOptionalPropertyTypes": false,
+        "noFallthroughCasesInSwitch": false,
+        "noUncheckedIndexedAccess": false,
+        "allowUnusedLabels": true,
+        "allowUnreachableCode": true,
+        "suppressImplicitAnyIndexErrors": true,
+        "suppressExcessPropertyErrors": true
     },
     "include": [
         "src"
