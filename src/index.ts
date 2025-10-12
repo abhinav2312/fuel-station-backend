@@ -28,6 +28,7 @@ import { createPurchasePricesRouter } from './routes/purchase-prices';
 import { createCashReceiptsRouter } from './routes/cash-receipts';
 import { createOnlinePaymentsRouter } from './routes/online-payments';
 import { createValidationRouter } from './routes/validation';
+import { createSeedRouter } from './routes/seed';
 import logsRouter from './routes/logs';
 
 app.use('/api/tanks', createTanksRouter(prisma));
@@ -44,6 +45,7 @@ app.use('/api/purchase-prices', createPurchasePricesRouter(prisma));
 app.use('/api/cash-receipts', createCashReceiptsRouter(prisma));
 app.use('/api/online-payments', createOnlinePaymentsRouter(prisma));
 app.use('/api/validation', createValidationRouter(prisma));
+app.use('/api/seed', createSeedRouter(prisma));
 app.use('/api/logs', logsRouter);
 
 app.listen(PORT, () => {
