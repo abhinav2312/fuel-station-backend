@@ -20,7 +20,7 @@ async function simpleSeed() {
         }
 
         console.log('📝 Creating fuel types with raw SQL...');
-        
+
         // Use raw SQL to insert fuel types
         await prisma.$executeRaw`
             INSERT INTO "FuelType" (name) VALUES 
@@ -41,7 +41,7 @@ async function simpleSeed() {
         const diesel = fuelTypes.find(ft => ft.name === 'Diesel');
 
         console.log('🛢️  Creating tanks with raw SQL...');
-        
+
         // Create tanks using raw SQL
         await prisma.$executeRaw`
             INSERT INTO "Tank" (name, "capacityLit", "fuelTypeId", "currentLevel", "avgUnitCost") VALUES 
@@ -55,7 +55,7 @@ async function simpleSeed() {
         console.log('✅ Tanks created');
 
         console.log('⛽ Creating pumps with raw SQL...');
-        
+
         // Create pumps using raw SQL
         await prisma.$executeRaw`
             INSERT INTO "Pump" (name, "fuelTypeId", "isActive") VALUES 
@@ -73,7 +73,7 @@ async function simpleSeed() {
         console.log('✅ Pumps created');
 
         console.log('💰 Setting initial prices with raw SQL...');
-        
+
         // Create prices using raw SQL
         await prisma.$executeRaw`
             INSERT INTO "Price" ("fuelTypeId", "perLitre", "active", "createdAt") VALUES 
@@ -85,7 +85,7 @@ async function simpleSeed() {
         console.log('✅ Initial prices set');
 
         console.log('👥 Creating sample clients with raw SQL...');
-        
+
         // Create clients using raw SQL
         await prisma.$executeRaw`
             INSERT INTO "Client" (name, "ownerName", phone, email, address, "creditLimit", balance) VALUES 
