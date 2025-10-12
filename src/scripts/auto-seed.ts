@@ -13,10 +13,14 @@ async function autoSeed() {
 
         // Check if data already exists
         const existingFuelTypes = await prisma.fuelType.count();
-        if (existingFuelTypes > 0) {
+        const existingTanks = await prisma.tank.count();
+
+        if (existingFuelTypes > 0 && existingTanks > 0) {
             console.log('✅ Database already has data, skipping auto-seed');
             return;
         }
+
+        console.log(`📊 Current data: ${existingFuelTypes} fuel types, ${existingTanks} tanks`);
 
         console.log('📝 Creating fuel types...');
 
@@ -180,7 +184,10 @@ async function autoSeed() {
 
     } catch (error) {
         console.error('❌ Auto-seed failed:', error);
+        console.error('Error details:', error);
         // Don't throw error to prevent backend from crashing
+    } finally {
+        await prisma.$disconnect();
     }
 }
 
