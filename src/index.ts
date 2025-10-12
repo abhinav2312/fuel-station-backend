@@ -14,6 +14,41 @@ app.get('/health', (_req, res) => {
     res.json({ ok: true });
 });
 
+// Database diagnostic endpoint
+app.get('/api/db-check', async (_req, res) => {
+    try {
+        console.log('🔍 Checking database connection...');
+
+        // Test basic connection
+        await prisma.$connect();
+        console.log('✅ Database connected');
+
+        // Test if tables exist
+        const fuelTypes = await prisma.fuelType.count();
+        const tanks = await prisma.tank.count();
+        const pumps = await prisma.pump.count();
+
+        res.json({
+            status: 'connected',
+            tables: {
+                fuelTypes,
+                tanks,
+                pumps
+            },
+            message: 'Database is accessible'
+        });
+
+    } catch (error: any) {
+        console.error('❌ Database check failed:', error);
+        res.status(500).json({
+            status: 'error',
+            error: error.message,
+            code: error.code,
+            meta: error.meta
+        });
+    }
+});
+
 import { createTanksRouter } from './routes/tanks';
 import { createPumpsRouter } from './routes/pumps';
 import { createClientsRouter } from './routes/clients';
