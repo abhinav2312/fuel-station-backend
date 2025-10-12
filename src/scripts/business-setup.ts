@@ -13,23 +13,33 @@ async function setupBusinessData() {
     try {
         // 1. Create Fuel Types
         console.log('⛽ Creating fuel types...');
-        const petrol = await prisma.fuelType.upsert({
-            where: { name: 'Petrol' },
-            update: {},
-            create: { name: 'Petrol' }
-        });
 
-        const premiumPetrol = await prisma.fuelType.upsert({
-            where: { name: 'Premium Petrol' },
-            update: {},
-            create: { name: 'Premium Petrol' }
-        });
+        let petrol, premiumPetrol, diesel;
 
-        const diesel = await prisma.fuelType.upsert({
-            where: { name: 'Diesel' },
-            update: {},
-            create: { name: 'Diesel' }
-        });
+        // Check if fuel types already exist
+        const existingFuelTypes = await prisma.fuelType.findMany();
+        if (existingFuelTypes.length > 0) {
+            console.log('✅ Fuel types already exist, using existing data');
+            petrol = existingFuelTypes.find(ft => ft.name === 'Petrol');
+            premiumPetrol = existingFuelTypes.find(ft => ft.name === 'Premium Petrol');
+            diesel = existingFuelTypes.find(ft => ft.name === 'Diesel');
+
+            if (!petrol || !premiumPetrol || !diesel) {
+                throw new Error('Some fuel types are missing from existing data');
+            }
+        } else {
+            petrol = await prisma.fuelType.create({
+                data: { name: 'Petrol' }
+            });
+
+            premiumPetrol = await prisma.fuelType.create({
+                data: { name: 'Premium Petrol' }
+            });
+
+            diesel = await prisma.fuelType.create({
+                data: { name: 'Diesel' }
+            });
+        }
 
         console.log('✅ Fuel types created');
 
