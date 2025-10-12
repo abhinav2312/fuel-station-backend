@@ -9,7 +9,7 @@ export function createTanksRouter(prisma: PrismaClient) {
         const tanks = await prisma.tank.findMany({
             include: {
                 fuelType: {
-                    select: { name: true }
+                    select: { name: true, id: true }
                 }
             },
             orderBy: { id: 'asc' },

@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
+import { autoSeed } from './scripts/auto-seed';
 
 const prisma = new PrismaClient();
 const app = express();
@@ -46,7 +47,13 @@ app.use('/api/online-payments', createOnlinePaymentsRouter(prisma));
 app.use('/api/validation', createValidationRouter(prisma));
 app.use('/api/logs', logsRouter);
 
-app.listen(PORT, () => {
-    console.log(`Backend listening on http://localhost:${PORT}`);
+// Run auto-seed before starting the server
+autoSeed().then(() => {
+    app.listen(PORT, () => {
+        console.log(`Backend listening on http://localhost:${PORT}`);
+    });
+}).catch((error) => {
+    console.error('Failed to start server:', error);
+    process.exit(1);
 });
 
