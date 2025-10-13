@@ -323,6 +323,73 @@ app.get('/api/prices', async (_req, res) => {
     }
 });
 
+// Add missing endpoints that frontend needs
+app.get('/api/validation', async (_req, res) => {
+    try {
+        const validation = [
+            { id: 1, type: "tank_level", message: "Petrol Tank 1 is 50% full", status: "info", date: new Date().toISOString() },
+            { id: 2, type: "price_update", message: "Diesel price updated to ₹89.25", status: "success", date: new Date().toISOString() }
+        ];
+        res.json(validation);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/readings', async (_req, res) => {
+    try {
+        const readings = [
+            {
+                id: 1,
+                date: new Date().toISOString(),
+                tankId: 1,
+                fuelTypeId: 1,
+                openingLevel: 5000,
+                closingLevel: 4500,
+                sales: 500,
+                pumpId: 1
+            },
+            {
+                id: 2,
+                date: new Date().toISOString(),
+                tankId: 2,
+                fuelTypeId: 1,
+                openingLevel: 7500,
+                closingLevel: 7000,
+                sales: 500,
+                pumpId: 2
+            }
+        ];
+        res.json(readings);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/purchase-prices', async (_req, res) => {
+    try {
+        const purchasePrices = [
+            { id: 1, fuelTypeId: 1, pricePerLitre: 90.00, date: new Date().toISOString(), supplier: "ABC Oil Co" },
+            { id: 2, fuelTypeId: 2, pricePerLitre: 85.00, date: new Date().toISOString(), supplier: "XYZ Petroleum" }
+        ];
+        res.json(purchasePrices);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/receipts', async (_req, res) => {
+    try {
+        const receipts = [
+            { id: 1, clientId: 1, amount: 500, date: new Date().toISOString(), type: "cash", description: "Fuel sale" },
+            { id: 2, clientId: 2, amount: 750, date: new Date().toISOString(), type: "credit", description: "Credit sale" }
+        ];
+        res.json(receipts);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
 // Temporarily comment out complex routes to debug
 // import { createTanksRouter } from './routes/tanks';
 // import { createPumpsRouter } from './routes/pumps';
