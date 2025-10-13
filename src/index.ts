@@ -9,6 +9,9 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 const app = express();
 
+// In-memory storage for demo purposes
+// All data is now stored in database - no in-memory arrays needed
+
 // Smart CORS configuration based on environment
 const getCorsOrigins = () => {
     const environment = process.env.NODE_ENV || 'production';
@@ -18,7 +21,7 @@ const getCorsOrigins = () => {
         return [frontendUrl];
     }
 
-    if (environment === 'local') {
+    if (environment === 'development') {
         return ['http://localhost:5173'];
     } else {
         return ['https://fuelstationpro.netlify.app'];
@@ -51,54 +54,19 @@ app.get('/api/status', async (_req, res) => {
 // Simple test endpoint for tanks
 app.get('/api/tanks', async (_req, res) => {
     try {
-        console.log('🔍 Testing tanks endpoint...');
-
-        // Return mock data for now to get frontend working
-        const mockTanks = [
-            {
-                id: 1,
-                name: "Petrol Tank 1",
-                capacityLit: 10000,
-                currentLevel: 5000,
-                fuelType: {
-                    name: "Petrol",
-                    id: 1,
-                    price: 95.50
-                }
+        const tanks = await prisma.tank.findMany({
+            include: {
+                fuelType: true
             },
-            {
-                id: 2,
-                name: "Petrol Tank 2",
-                capacityLit: 10000,
-                currentLevel: 7500,
-                fuelType: {
-                    name: "Petrol",
-                    id: 1,
-                    price: 95.50
-                }
-            },
-            {
-                id: 3,
-                name: "Diesel Tank 1",
-                capacityLit: 12000,
-                currentLevel: 8000,
-                fuelType: {
-                    name: "Diesel",
-                    id: 2,
-                    price: 89.25
-                }
+            orderBy: {
+                id: 'asc'
             }
-        ];
-
-        console.log('✅ Returning mock tank data');
-        res.json(mockTanks);
-
-    } catch (error: any) {
-        console.error('❌ Tanks endpoint failed:', error);
-        res.status(500).json({
-            error: error.message,
-            code: error.code
         });
+
+        res.json(tanks);
+    } catch (error: any) {
+        console.error('Error fetching tanks:', error);
+        res.status(500).json({ error: error.message });
     }
 });
 
@@ -137,136 +105,121 @@ app.put('/api/tanks/:id', async (req, res) => {
 // Add basic endpoints for other data with mock data
 app.get('/api/pumps', async (_req, res) => {
     try {
-        const mockPumps = [
-            { id: 1, name: "Petrol Pump 1", fuelType: { id: 1, name: "Petrol", price: 95.50 } },
-            { id: 2, name: "Petrol Pump 2", fuelType: { id: 1, name: "Petrol", price: 95.50 } },
-            { id: 3, name: "Diesel Pump 1", fuelType: { id: 2, name: "Diesel", price: 89.25 } },
-            { id: 4, name: "Diesel Pump 2", fuelType: { id: 2, name: "Diesel", price: 89.25 } }
-        ];
-        res.json(mockPumps);
+        const pumps = await prisma.pump.findMany({
+            include: {
+                fuelType: true
+            },
+            orderBy: {
+                id: 'asc'
+            }
+        });
+
+        res.json(pumps);
     } catch (error: any) {
+        console.error('Error fetching pumps:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
 app.get('/api/clients', async (_req, res) => {
     try {
-        const mockClients = [
-            {
-                id: 1,
-                name: "ABC Transport",
-                ownerName: "John Doe",
-                phone: "9876543210",
-                address: "123 Main St",
-                creditLimit: "50000",
-                balance: "0"
-            },
-            {
-                id: 2,
-                name: "XYZ Logistics",
-                ownerName: "Jane Smith",
-                phone: "9876543211",
-                address: "456 Oak Ave",
-                creditLimit: "75000",
-                balance: "0"
+        const clients = await prisma.client.findMany({
+            orderBy: {
+                name: 'asc'
             }
-        ];
-        res.json(mockClients);
+        });
+
+        res.json(clients);
     } catch (error: any) {
+        console.error('Error fetching clients:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
 app.get('/api/credits', async (_req, res) => {
     try {
-        const mockCredits = [
-            {
-                id: 1,
-                clientId: 1,
-                amount: 1000,
-                description: "Credit transaction",
-                date: new Date().toISOString(),
-                status: "pending",
-                fuelTypeId: 1,
-                litres: 10.5,
-                pricePerLitre: 95.50,
-                totalAmount: 1002.75
+        const credits = await prisma.clientCredit.findMany({
+            include: {
+                client: true,
+                fuelType: true
             },
-            {
-                id: 2,
-                clientId: 2,
-                amount: 1500,
-                description: "Diesel credit",
-                date: new Date().toISOString(),
-                status: "paid",
-                fuelTypeId: 2,
-                litres: 16.8,
-                pricePerLitre: 89.25,
-                totalAmount: 1499.40
+            orderBy: {
+                date: 'desc'
             }
-        ];
-        res.json(mockCredits);
+        });
+
+        res.json(credits);
     } catch (error: any) {
+        console.error('Error fetching credits:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-app.get('/api/cash-receipts', async (_req, res) => {
+app.get('/api/cash-receipts', async (req, res) => {
     try {
-        const mockReceipts = [
-            {
-                id: 1,
-                amount: 500,
-                date: new Date().toISOString(),
-                description: "Cash sale",
-                clientId: 1,
-                fuelTypeId: 1,
-                litres: 5.2,
-                pricePerLitre: 95.50
+        const { date } = req.query;
+
+        // Build where clause for date filtering
+        let whereClause: any = {};
+        if (date) {
+            const startDate = new Date(date as string);
+            const endDate = new Date(startDate);
+            endDate.setDate(endDate.getDate() + 1);
+
+            whereClause.date = {
+                gte: startDate,
+                lt: endDate
+            };
+        }
+
+        const receipts = await prisma.cashReceipt.findMany({
+            where: whereClause,
+            include: {
+                pump: {
+                    include: {
+                        fuelType: true
+                    }
+                }
             },
-            {
-                id: 2,
-                amount: 750,
-                date: new Date().toISOString(),
-                description: "Cash sale",
-                clientId: 2,
-                fuelTypeId: 2,
-                litres: 8.4,
-                pricePerLitre: 89.25
+            orderBy: {
+                date: 'desc'
             }
-        ];
-        res.json(mockReceipts);
+        });
+
+        res.json(receipts);
     } catch (error: any) {
+        console.error('Error fetching cash receipts:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
-app.get('/api/online-payments', async (_req, res) => {
+app.get('/api/online-payments', async (req, res) => {
     try {
-        const mockPayments = [
-            {
-                id: 1,
-                amount: 300,
-                date: new Date().toISOString(),
-                method: "UPI",
-                clientId: 1,
-                fuelTypeId: 1,
-                litres: 3.1,
-                pricePerLitre: 95.50
-            },
-            {
-                id: 2,
-                amount: 450,
-                date: new Date().toISOString(),
-                method: "Card",
-                clientId: 2,
-                fuelTypeId: 2,
-                litres: 5.0,
-                pricePerLitre: 89.25
+        const { date } = req.query;
+
+        // Build where clause for date filtering
+        let whereClause: any = {};
+        if (date) {
+            const startDate = new Date(date as string);
+            const endDate = new Date(startDate);
+            endDate.setDate(endDate.getDate() + 1);
+
+            whereClause.date = {
+                gte: startDate,
+                lt: endDate
+            };
+        }
+
+        const payments = await prisma.onlinePayment.findMany({
+            where: whereClause,
+            orderBy: {
+                date: 'desc'
             }
-        ];
-        res.json(mockPayments);
+        });
+
+        res.json(payments);
     } catch (error: any) {
+        console.error('Error fetching online payments:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -274,44 +227,130 @@ app.get('/api/online-payments', async (_req, res) => {
 app.get('/api/reports/summary', async (req, res) => {
     try {
         const { period = 'daily', date } = req.query;
+        const targetDate = date ? new Date(date as string) : new Date();
 
-        // Create a proper summary structure that matches frontend expectations
+        // Calculate date range based on period
+        let startDate: Date, endDate: Date;
+        if (period === 'daily') {
+            startDate = new Date(targetDate);
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date(targetDate);
+            endDate.setHours(23, 59, 59, 999);
+        } else if (period === 'weekly') {
+            startDate = new Date(targetDate);
+            startDate.setDate(startDate.getDate() - startDate.getDay());
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date(startDate);
+            endDate.setDate(endDate.getDate() + 6);
+            endDate.setHours(23, 59, 59, 999);
+        } else { // monthly
+            startDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
+            endDate = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0);
+            endDate.setHours(23, 59, 59, 999);
+        }
+
+        // Get sales data for the period
+        const sales = await prisma.sale.findMany({
+            where: {
+                createdAt: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            },
+            include: {
+                pump: {
+                    include: {
+                        fuelType: true
+                    }
+                }
+            }
+        });
+
+        // Get cash receipts and online payments for the period
+        const cashReceipts = await prisma.cashReceipt.findMany({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            }
+        });
+
+        const onlinePayments = await prisma.onlinePayment.findMany({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            }
+        });
+
+        // Get credits for the period
+        const credits = await prisma.clientCredit.findMany({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            }
+        });
+
+        // Calculate totals
+        const totalRevenue = sales.reduce((sum, sale) => sum + Number(sale.totalAmount), 0);
+        const totalLitres = sales.reduce((sum, sale) => sum + Number(sale.litres), 0);
+        const totalCashReceived = cashReceipts.reduce((sum, receipt) => sum + Number(receipt.amount), 0);
+        const totalOnlineReceived = onlinePayments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+        const totalCredits = credits.reduce((sum, credit) => sum + Number(credit.totalAmount), 0);
+
+        // Group by fuel type
+        const fuelTypeStats: Record<string, { litres: number; revenue: number }> = {};
+        sales.forEach(sale => {
+            const fuelTypeName = sale.pump.fuelType.name.toLowerCase().replace(/\s+/g, '');
+            if (!fuelTypeStats[fuelTypeName]) {
+                fuelTypeStats[fuelTypeName] = { litres: 0, revenue: 0 };
+            }
+            fuelTypeStats[fuelTypeName].litres += Number(sale.litres);
+            fuelTypeStats[fuelTypeName].revenue += Number(sale.totalAmount);
+        });
+
         const summary = {
             period: period as string,
-            start: date ? new Date(date as string).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
-            end: date ? new Date(date as string).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            start: startDate.toISOString().split('T')[0],
+            end: endDate.toISOString().split('T')[0],
             totals: {
-                litres: 1500,
-                petrolLitres: 1000,
-                dieselLitres: 500,
-                premiumPetrolLitres: 0,
-                revenue: 125000,
-                profit: 15000
+                litres: totalLitres,
+                petrolLitres: fuelTypeStats.petrol?.litres || 0,
+                dieselLitres: fuelTypeStats.diesel?.litres || 0,
+                premiumPetrolLitres: fuelTypeStats.premiumpetrol?.litres || 0,
+                revenue: totalRevenue,
+                profit: totalRevenue * 0.12 // Assuming 12% profit margin
             },
             revenues: {
-                petrolRevenue: 95000,
-                dieselRevenue: 30000,
-                premiumPetrolRevenue: 0
+                petrolRevenue: fuelTypeStats.petrol?.revenue || 0,
+                dieselRevenue: fuelTypeStats.diesel?.revenue || 0,
+                premiumPetrolRevenue: fuelTypeStats.premiumpetrol?.revenue || 0
             },
             financials: {
-                totalRevenue: 125000,
-                creditToCollect: 25000,
-                moneyReceived: 100000,
-                cashReceived: 80000,
-                onlineReceived: 20000
+                totalRevenue: totalRevenue,
+                creditToCollect: totalCredits,
+                moneyReceived: totalCashReceived + totalOnlineReceived,
+                cashReceived: totalCashReceived,
+                onlineReceived: totalOnlineReceived
             },
-            // Keep the simple fields for backward compatibility
-            tanks: 3,
-            pumps: 4,
-            clients: 2,
-            sales: 1250,
-            todaySales: 1250,
-            todayProfit: 150,
-            totalCredits: 25000,
-            unpaidCredits: 10000
+            // Counts
+            tanks: await prisma.tank.count(),
+            pumps: await prisma.pump.count(),
+            clients: await prisma.client.count(),
+            sales: sales.length,
+            todaySales: totalRevenue,
+            todayProfit: totalRevenue * 0.12,
+            totalCredits: totalCredits,
+            unpaidCredits: await prisma.clientCredit.count({ where: { status: 'unpaid' } })
         };
+
         res.json(summary);
     } catch (error: any) {
+        console.error('Error fetching reports summary:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -319,66 +358,140 @@ app.get('/api/reports/summary', async (req, res) => {
 // Add missing endpoints that frontend might need
 app.get('/api/prices/current', async (_req, res) => {
     try {
-        // Return prices in the format the frontend expects
-        const prices = {
-            petrol: 95.50,
-            diesel: 89.25,
-            premiumpetrol: null
+        // Get current active prices for all fuel types
+        const prices = await prisma.price.findMany({
+            where: { active: true },
+            include: {
+                fuelType: true
+            },
+            orderBy: {
+                createdAt: 'desc'
+            }
+        });
+
+        // Group by fuel type and get the latest price for each
+        const currentPrices: Record<string, number> = {};
+        const fuelTypeMap: Record<number, string> = {};
+
+        // Create fuel type name mapping
+        const fuelTypes = await prisma.fuelType.findMany();
+        fuelTypes.forEach(ft => {
+            const key = ft.name.toLowerCase().replace(/\s+/g, '');
+            fuelTypeMap[ft.id] = key;
+        });
+
+        // Get latest price for each fuel type and track the most recent update
+        let mostRecentUpdate: Date | null = null;
+
+        for (const fuelType of fuelTypes) {
+            const latestPrice = await prisma.price.findFirst({
+                where: {
+                    fuelTypeId: fuelType.id,
+                    active: true
+                },
+                orderBy: {
+                    createdAt: 'desc'
+                }
+            });
+
+            if (latestPrice) {
+                const key = fuelType.name.toLowerCase().replace(/\s+/g, '');
+                currentPrices[key] = Number(latestPrice.perLitre);
+
+                // Track the most recent update across all fuel types
+                if (!mostRecentUpdate || latestPrice.createdAt > mostRecentUpdate) {
+                    mostRecentUpdate = latestPrice.createdAt;
+                }
+            }
+        }
+
+        // Add the last updated timestamp
+        const response = {
+            ...currentPrices,
+            updatedAt: mostRecentUpdate ? mostRecentUpdate.toISOString() : null
         };
-        res.json(prices);
+
+        res.json(response);
     } catch (error: any) {
+        console.error('Error fetching current prices:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
 app.get('/api/sales', async (_req, res) => {
     try {
-        const sales = [
-            { id: 1, clientId: 1, amount: 500, date: new Date().toISOString(), fuelTypeId: 1, litres: 5.2 },
-            { id: 2, clientId: 2, amount: 750, date: new Date().toISOString(), fuelTypeId: 2, litres: 8.4 }
-        ];
+        const sales = await prisma.sale.findMany({
+            include: {
+                client: true,
+                pump: {
+                    include: {
+                        fuelType: true
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: 'desc'
+            }
+        });
+
         res.json(sales);
     } catch (error: any) {
+        console.error('Error fetching sales:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
 app.get('/api/purchases', async (_req, res) => {
     try {
-        const purchases = [
-            {
-                id: 1,
-                tankId: 1,
-                litres: 1000,
-                unitCost: 90.00,
-                totalCost: 90000,
-                date: new Date().toISOString(),
+        const purchases = await prisma.purchase.findMany({
+            include: {
                 tank: {
-                    id: 1,
-                    name: "Petrol Tank 1",
-                    fuelType: { id: 1, name: "Petrol" },
-                    currentLevel: 5000,
-                    capacityLit: 10000
+                    include: {
+                        fuelType: true
+                    }
                 }
             },
-            {
-                id: 2,
-                tankId: 2,
-                litres: 1200,
-                unitCost: 85.00,
-                totalCost: 102000,
-                date: new Date().toISOString(),
-                tank: {
-                    id: 2,
-                    name: "Diesel Tank 1",
-                    fuelType: { id: 2, name: "Diesel" },
-                    currentLevel: 8000,
-                    capacityLit: 12000
-                }
+            orderBy: {
+                date: 'desc'
             }
-        ];
+        });
+
         res.json(purchases);
     } catch (error: any) {
+        console.error('Error fetching purchases:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/purchases', async (req, res) => {
+    try {
+        const { tankId, litres, unitCost, date } = req.body;
+        console.log('Creating purchase:', { tankId, litres, unitCost, date });
+
+        // Calculate total cost
+        const totalCost = litres * unitCost;
+
+        // Create purchase in database
+        const newPurchase = await prisma.purchase.create({
+            data: {
+                tankId: parseInt(tankId),
+                litres: parseFloat(litres),
+                unitCost: parseFloat(unitCost),
+                totalCost: totalCost,
+                date: date ? new Date(date) : new Date()
+            },
+            include: {
+                tank: {
+                    include: {
+                        fuelType: true
+                    }
+                }
+            }
+        });
+
+        res.status(201).json(newPurchase);
+    } catch (error: any) {
+        console.error('Error creating purchase:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -398,28 +511,40 @@ app.get('/api/prices', async (_req, res) => {
 // Add missing prices endpoints
 app.get('/api/prices/combined', async (_req, res) => {
     try {
-        const combined = [
-            {
-                date: new Date().toISOString().split('T')[0],
-                petrol: 95.50,
-                diesel: 89.25,
-                premiumpetrol: null
+        // Get historical prices for all fuel types
+        const prices = await prisma.price.findMany({
+            include: {
+                fuelType: true
             },
-            {
-                date: new Date(Date.now() - 86400000).toISOString().split('T')[0],
-                petrol: 94.50,
-                diesel: 88.25,
-                premiumpetrol: null
+            orderBy: {
+                createdAt: 'desc'
             },
-            {
-                date: new Date(Date.now() - 172800000).toISOString().split('T')[0],
-                petrol: 93.50,
-                diesel: 87.25,
-                premiumpetrol: null
+            take: 30 // Get last 30 price records
+        });
+
+        // Group prices by date
+        const priceMap: Record<string, Record<string, number>> = {};
+
+        prices.forEach(price => {
+            const date = price.createdAt.toISOString().split('T')[0];
+            const fuelTypeKey = price.fuelType.name.toLowerCase().replace(/\s+/g, '');
+
+            if (!priceMap[date]) {
+                priceMap[date] = {};
             }
-        ];
+
+            priceMap[date][fuelTypeKey] = Number(price.perLitre);
+        });
+
+        // Convert to array format expected by frontend
+        const combined = Object.entries(priceMap).map(([date, prices]) => ({
+            date,
+            ...prices
+        }));
+
         res.json(combined);
     } catch (error: any) {
+        console.error('Error fetching combined prices:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -429,14 +554,204 @@ app.post('/api/prices/set', async (req, res) => {
         const { prices, date } = req.body;
         console.log('Setting prices:', prices, 'for date:', date);
 
-        // Simulate price setting
-        const result = {
+        // Get all fuel types to map names to IDs
+        const fuelTypes = await prisma.fuelType.findMany();
+        const fuelTypeMap: Record<string, number> = {};
+
+        fuelTypes.forEach(ft => {
+            const key = ft.name.toLowerCase().replace(/\s+/g, '');
+            fuelTypeMap[key] = ft.id;
+        });
+
+        // First, deactivate all current prices
+        await prisma.price.updateMany({
+            where: { active: true },
+            data: { active: false }
+        });
+
+        // Create new prices for each fuel type
+        const priceEntries = Object.entries(prices).map(([fuelTypeName, price]) => {
+            const fuelTypeId = fuelTypeMap[fuelTypeName];
+            if (!fuelTypeId) {
+                throw new Error(`Unknown fuel type: ${fuelTypeName}`);
+            }
+
+            return {
+                fuelTypeId: fuelTypeId,
+                perLitre: parseFloat(price as string),
+                active: true,
+                createdAt: date ? new Date(date) : new Date()
+            };
+        });
+
+        await prisma.price.createMany({
+            data: priceEntries
+        });
+
+        res.json({
             success: true,
             message: 'Prices updated successfully',
             data: { prices, date }
-        };
-        res.json(result);
+        });
     } catch (error: any) {
+        console.error('Error setting prices:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Add missing POST endpoints that frontend needs
+app.post('/api/clients', async (req, res) => {
+    try {
+        const { name, ownerName, phone, address, creditLimit } = req.body;
+        console.log('Creating client:', { name, ownerName, phone, address, creditLimit });
+
+        // Create new client in database
+        const newClient = await prisma.client.create({
+            data: {
+                name,
+                ownerName,
+                phone,
+                address,
+                creditLimit: creditLimit ? parseFloat(creditLimit) : 0,
+                balance: 0
+            }
+        });
+
+        res.status(201).json(newClient);
+    } catch (error: any) {
+        console.error('Error creating client:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.put('/api/clients/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, ownerName, phone, address, creditLimit, balance } = req.body;
+        console.log('Updating client:', id, { name, ownerName, phone, address, creditLimit, balance });
+
+        // Update client in database
+        const updatedClient = await prisma.client.update({
+            where: { id: parseInt(id) },
+            data: {
+                name,
+                ownerName,
+                phone,
+                address,
+                creditLimit: creditLimit ? parseFloat(creditLimit) : undefined,
+                balance: balance ? parseFloat(balance) : undefined
+            }
+        });
+
+        res.json(updatedClient);
+    } catch (error: any) {
+        console.error('Error updating client:', error);
+        if (error.code === 'P2025') {
+            res.status(404).json({ error: 'Client not found' });
+        } else {
+            res.status(500).json({ error: error.message });
+        }
+    }
+});
+
+app.post('/api/credits', async (req, res) => {
+    try {
+        const { clientId, fuelTypeId, litres, pricePerLitre, totalAmount, date, note } = req.body;
+        console.log('Adding credit:', { clientId, fuelTypeId, litres, pricePerLitre, totalAmount, date, note });
+
+        // Create credit in database
+        const newCredit = await prisma.clientCredit.create({
+            data: {
+                clientId: parseInt(clientId),
+                fuelTypeId: parseInt(fuelTypeId),
+                litres: parseFloat(litres),
+                pricePerLitre: parseFloat(pricePerLitre),
+                totalAmount: parseFloat(totalAmount),
+                date: date ? new Date(date) : new Date(),
+                note: note || ""
+            },
+            include: {
+                client: true,
+                fuelType: true
+            }
+        });
+
+        res.status(201).json(newCredit);
+    } catch (error: any) {
+        console.error('Error creating credit:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/cash-receipts', async (req, res) => {
+    try {
+        const { pumpId, amount, date } = req.body;
+        console.log('Adding cash receipt:', { pumpId, amount, date });
+
+        // Create cash receipt in database
+        const newReceipt = await prisma.cashReceipt.create({
+            data: {
+                pumpId: parseInt(pumpId),
+                amount: parseFloat(amount),
+                date: date ? new Date(date) : new Date()
+            },
+            include: {
+                pump: {
+                    include: {
+                        fuelType: true
+                    }
+                }
+            }
+        });
+
+        res.status(201).json(newReceipt);
+    } catch (error: any) {
+        console.error('Error creating cash receipt:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/online-payments', async (req, res) => {
+    try {
+        const { amount, method, reference, description, date } = req.body;
+        console.log('Adding online payment:', { amount, method, reference, description, date });
+
+        // Create online payment in database
+        const newPayment = await prisma.onlinePayment.create({
+            data: {
+                amount: parseFloat(amount),
+                method: method || "UPI",
+                reference: reference || "",
+                description: description || "",
+                date: date ? new Date(date) : new Date()
+            }
+        });
+
+        res.status(201).json(newPayment);
+    } catch (error: any) {
+        console.error('Error creating online payment:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Bulk cash receipts endpoint
+app.post('/api/cash-receipts/bulk', async (req, res) => {
+    try {
+        const { receipts } = req.body;
+        console.log('Adding bulk cash receipts:', receipts);
+
+        // Create bulk cash receipts in database
+        const newReceipts = await prisma.cashReceipt.createMany({
+            data: receipts.map((receipt: any) => ({
+                pumpId: parseInt(receipt.pumpId),
+                amount: parseFloat(receipt.amount),
+                date: receipt.date ? new Date(receipt.date) : new Date()
+            }))
+        });
+
+        res.status(201).json({ success: true, count: newReceipts.count });
+    } catch (error: any) {
+        console.error('Error creating bulk cash receipts:', error);
         res.status(500).json({ error: error.message });
     }
 });
@@ -445,75 +760,269 @@ app.post('/api/prices/set', async (req, res) => {
 app.get('/api/validation', async (req, res) => {
     try {
         const { date } = req.query;
+        const targetDate = date ? new Date(date as string) : new Date();
 
-        // Return validation data structure that frontend expects
+        // Calculate date range for the day
+        const startDate = new Date(targetDate);
+        startDate.setHours(0, 0, 0, 0);
+        const endDate = new Date(targetDate);
+        endDate.setHours(23, 59, 59, 999);
+
+        // Get sales for the day
+        const sales = await prisma.sale.findMany({
+            where: {
+                createdAt: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            }
+        });
+
+        // Get cash receipts for the day
+        const cashReceipts = await prisma.cashReceipt.findMany({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            }
+        });
+
+        // Get online payments for the day
+        const onlinePayments = await prisma.onlinePayment.findMany({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            }
+        });
+
+        // Get credit sales for the day
+        const creditSales = await prisma.clientCredit.findMany({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            }
+        });
+
+        // Calculate totals
+        const grossSales = sales.reduce((sum, sale) => sum + Number(sale.totalAmount), 0);
+        const totalCashReceipts = cashReceipts.reduce((sum, receipt) => sum + Number(receipt.amount), 0);
+        const totalOnlinePayments = onlinePayments.reduce((sum, payment) => sum + Number(payment.amount), 0);
+        const totalCreditSales = creditSales.reduce((sum, credit) => sum + Number(credit.totalAmount), 0);
+        const totalReceived = totalCashReceipts + totalOnlinePayments;
+        const difference = grossSales - totalReceived;
+        const isBalanced = Math.abs(difference) < 0.01; // Allow for small rounding differences
+
         const validationData = {
-            date: date || new Date().toISOString().split('T')[0],
-            grossSales: 125000,
-            cashReceipts: 80000,
-            onlinePayments: 20000,
-            creditSales: 25000,
-            totalReceived: 100000,
-            difference: 25000,
-            isBalanced: false
+            date: targetDate.toISOString().split('T')[0],
+            grossSales,
+            cashReceipts: totalCashReceipts,
+            onlinePayments: totalOnlinePayments,
+            creditSales: totalCreditSales,
+            totalReceived,
+            difference,
+            isBalanced
         };
 
         res.json(validationData);
     } catch (error: any) {
+        console.error('Error fetching validation data:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
 app.get('/api/readings', async (_req, res) => {
     try {
-        const readings = [
-            {
-                id: 1,
-                date: new Date().toISOString(),
-                tankId: 1,
-                fuelTypeId: 1,
-                openingLevel: 5000,
-                closingLevel: 4500,
-                sales: 500,
-                pumpId: 1
+        const readings = await prisma.dailyReading.findMany({
+            include: {
+                pump: {
+                    include: {
+                        fuelType: true
+                    }
+                }
             },
-            {
-                id: 2,
-                date: new Date().toISOString(),
-                tankId: 2,
-                fuelTypeId: 1,
-                openingLevel: 7500,
-                closingLevel: 7000,
-                sales: 500,
-                pumpId: 2
+            orderBy: {
+                date: 'desc'
             }
-        ];
+        });
+
         res.json(readings);
     } catch (error: any) {
+        console.error('Error fetching readings:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/readings', async (req, res) => {
+    try {
+        const { pumpId, date, openingLitres, closingLitres, pricePerLitre, revenue } = req.body;
+        console.log('Saving reading:', { pumpId, date, openingLitres, closingLitres, pricePerLitre, revenue });
+
+        // Create or update daily reading
+        const reading = await prisma.dailyReading.upsert({
+            where: {
+                pumpId_date: {
+                    pumpId: parseInt(pumpId),
+                    date: new Date(date)
+                }
+            },
+            update: {
+                openingLitres: parseFloat(openingLitres),
+                closingLitres: parseFloat(closingLitres),
+                pricePerLitre: parseFloat(pricePerLitre),
+                revenue: parseFloat(revenue || 0)
+            },
+            create: {
+                pumpId: parseInt(pumpId),
+                date: new Date(date),
+                openingLitres: parseFloat(openingLitres),
+                closingLitres: parseFloat(closingLitres),
+                pricePerLitre: parseFloat(pricePerLitre),
+                revenue: parseFloat(revenue || 0)
+            },
+            include: {
+                pump: {
+                    include: {
+                        fuelType: true
+                    }
+                }
+            }
+        });
+
+        res.status(201).json(reading);
+    } catch (error: any) {
+        console.error('Error saving reading:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Bulk readings endpoint for saving multiple readings at once
+// Each pump can have only ONE reading per day - updates existing record if found
+app.post('/api/readings/bulk', async (req, res) => {
+    try {
+        const { readings } = req.body;
+        console.log('Saving bulk readings:', readings);
+
+        if (!readings || !Array.isArray(readings)) {
+            return res.status(400).json({ error: 'Readings array is required' });
+        }
+
+        const savedReadings = [];
+
+        for (const reading of readings) {
+            const { pumpId, date, openingLitres, closingLitres, pricePerLitre, revenue } = reading;
+
+            // UPSERT: Update existing reading for this pump+date, or create new one
+            // This ensures only ONE reading per pump per day
+            const savedReading = await prisma.dailyReading.upsert({
+                where: {
+                    pumpId_date: {
+                        pumpId: parseInt(pumpId),
+                        date: new Date(date)
+                    }
+                },
+                update: {
+                    openingLitres: parseFloat(openingLitres),
+                    closingLitres: parseFloat(closingLitres),
+                    pricePerLitre: parseFloat(pricePerLitre),
+                    revenue: parseFloat(revenue || 0)
+                },
+                create: {
+                    pumpId: parseInt(pumpId),
+                    date: new Date(date),
+                    openingLitres: parseFloat(openingLitres),
+                    closingLitres: parseFloat(closingLitres),
+                    pricePerLitre: parseFloat(pricePerLitre),
+                    revenue: parseFloat(revenue || 0)
+                },
+                include: {
+                    pump: {
+                        include: {
+                            fuelType: true
+                        }
+                    }
+                }
+            });
+
+            savedReadings.push(savedReading);
+        }
+
+        res.status(201).json({
+            success: true,
+            message: `${savedReadings.length} readings saved successfully`,
+            readings: savedReadings
+        });
+    } catch (error: any) {
+        console.error('Error saving bulk readings:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
 app.get('/api/purchase-prices', async (_req, res) => {
     try {
-        const purchasePrices = [
-            { id: 1, fuelTypeId: 1, pricePerLitre: 90.00, date: new Date().toISOString(), supplier: "ABC Oil Co" },
-            { id: 2, fuelTypeId: 2, pricePerLitre: 85.00, date: new Date().toISOString(), supplier: "XYZ Petroleum" }
-        ];
+        // Get latest purchase prices for each tank
+        const tanks = await prisma.tank.findMany();
+        const purchasePrices: Record<number, number> = {};
+
+        for (const tank of tanks) {
+            const latestPrice = await prisma.purchasePrice.findFirst({
+                where: { tankId: tank.id },
+                orderBy: { createdAt: 'desc' }
+            });
+
+            if (latestPrice) {
+                purchasePrices[tank.id] = Number(latestPrice.price);
+            } else {
+                // Default prices if no purchase price found
+                purchasePrices[tank.id] = 0;
+            }
+        }
+
         res.json(purchasePrices);
     } catch (error: any) {
+        console.error('Error fetching purchase prices:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/purchase-prices', async (req, res) => {
+    try {
+        const { prices } = req.body;
+        console.log('Saving purchase prices:', prices);
+
+        // Save purchase prices to database
+        const priceEntries = Object.entries(prices).map(([tankId, price]) => ({
+            tankId: parseInt(tankId),
+            price: parseFloat(price as string)
+        }));
+
+        await prisma.purchasePrice.createMany({
+            data: priceEntries
+        });
+
+        res.json({ success: true, message: 'Purchase prices saved successfully' });
+    } catch (error: any) {
+        console.error('Error saving purchase prices:', error);
         res.status(500).json({ error: error.message });
     }
 });
 
 app.get('/api/receipts', async (_req, res) => {
     try {
-        const receipts = [
-            { id: 1, clientId: 1, amount: 500, date: new Date().toISOString(), type: "cash", description: "Fuel sale" },
-            { id: 2, clientId: 2, amount: 750, date: new Date().toISOString(), type: "credit", description: "Credit sale" }
-        ];
+        // Get daily receipts from the database
+        const receipts = await prisma.dailyReceipt.findMany({
+            orderBy: {
+                date: 'desc'
+            }
+        });
+
         res.json(receipts);
     } catch (error: any) {
+        console.error('Error fetching receipts:', error);
         res.status(500).json({ error: error.message });
     }
 });

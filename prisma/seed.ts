@@ -28,38 +28,26 @@ async function main() {
 
     console.log('✅ Fuel types created');
 
-    // 2. Create Storage Tanks
+    // 2. Create Storage Tanks (One per fuel type)
     console.log('🛢️  Creating storage tanks...');
     const tanks = [
         {
-            name: 'Petrol Tank 1',
+            name: 'Petrol Tank',
             capacityLit: 10000,
             currentLevel: 0,
             fuelTypeId: petrol.id
         },
         {
-            name: 'Petrol Tank 2',
-            capacityLit: 10000,
+            name: 'Diesel Tank',
+            capacityLit: 12000,
             currentLevel: 0,
-            fuelTypeId: petrol.id
+            fuelTypeId: diesel.id
         },
         {
             name: 'Premium Petrol Tank',
             capacityLit: 8000,
             currentLevel: 0,
             fuelTypeId: premiumPetrol.id
-        },
-        {
-            name: 'Diesel Tank 1',
-            capacityLit: 12000,
-            currentLevel: 0,
-            fuelTypeId: diesel.id
-        },
-        {
-            name: 'Diesel Tank 2',
-            capacityLit: 12000,
-            currentLevel: 0,
-            fuelTypeId: diesel.id
         }
     ];
 
@@ -74,20 +62,20 @@ async function main() {
     // 3. Create Fuel Pumps
     console.log('⛽ Creating fuel pumps...');
     const pumps = [
-        // Petrol Pumps
+        // 3 Petrol Pumps
         { name: 'Petrol Pump 1', fuelTypeId: petrol.id },
         { name: 'Petrol Pump 2', fuelTypeId: petrol.id },
         { name: 'Petrol Pump 3', fuelTypeId: petrol.id },
 
-        // Premium Petrol Pumps
-        { name: 'Premium Petrol Pump 1', fuelTypeId: premiumPetrol.id },
-        { name: 'Premium Petrol Pump 2', fuelTypeId: premiumPetrol.id },
-
-        // Diesel Pumps
+        // 4 Diesel Pumps
         { name: 'Diesel Pump 1', fuelTypeId: diesel.id },
         { name: 'Diesel Pump 2', fuelTypeId: diesel.id },
         { name: 'Diesel Pump 3', fuelTypeId: diesel.id },
-        { name: 'Diesel Pump 4', fuelTypeId: diesel.id }
+        { name: 'Diesel Pump 4', fuelTypeId: diesel.id },
+
+        // 2 Premium Petrol Pumps
+        { name: 'Premium Petrol Pump 1', fuelTypeId: premiumPetrol.id },
+        { name: 'Premium Petrol Pump 2', fuelTypeId: premiumPetrol.id }
     ];
 
     for (const pumpData of pumps) {
