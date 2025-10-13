@@ -51,9 +51,59 @@ app.get('/api/status', async (_req, res) => {
     }
 });
 
+// Database diagnostic endpoint
+app.get('/api/db-check', async (_req, res) => {
+    try {
+        console.log('Running database diagnostic...');
+
+        // Test connection
+        await prisma.$connect();
+        console.log('✅ Database connection successful');
+
+        // Check if tables exist and have data
+        const fuelTypeCount = await prisma.fuelType.count();
+        const tankCount = await prisma.tank.count();
+        const pumpCount = await prisma.pump.count();
+        const clientCount = await prisma.client.count();
+
+        console.log('📊 Database stats:', {
+            fuelTypes: fuelTypeCount,
+            tanks: tankCount,
+            pumps: pumpCount,
+            clients: clientCount
+        });
+
+        res.json({
+            status: 'ok',
+            database: 'connected',
+            stats: {
+                fuelTypes: fuelTypeCount,
+                tanks: tankCount,
+                pumps: pumpCount,
+                clients: clientCount
+            },
+            message: fuelTypeCount === 0 ? 'Database is empty - needs seeding' : 'Database has data'
+        });
+    } catch (error: any) {
+        console.error('❌ Database diagnostic failed:', error);
+        res.status(500).json({
+            status: 'error',
+            database: 'disconnected',
+            error: error.message,
+            details: 'Check DATABASE_URL and database connection'
+        });
+    }
+});
+
 // Simple test endpoint for tanks
 app.get('/api/tanks', async (_req, res) => {
     try {
+        console.log('Fetching tanks from database...');
+
+        // Test database connection first
+        await prisma.$connect();
+        console.log('Database connected successfully');
+
         const tanks = await prisma.tank.findMany({
             include: {
                 fuelType: true
@@ -63,10 +113,19 @@ app.get('/api/tanks', async (_req, res) => {
             }
         });
 
+        console.log(`Found ${tanks.length} tanks in database`);
         res.json(tanks);
     } catch (error: any) {
         console.error('Error fetching tanks:', error);
-        res.status(500).json({ error: error.message });
+        console.error('Error details:', {
+            message: error.message,
+            code: error.code,
+            meta: error.meta
+        });
+        res.status(500).json({
+            error: error.message,
+            details: 'Database connection or query failed'
+        });
     }
 });
 
