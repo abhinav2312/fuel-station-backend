@@ -47,7 +47,8 @@ app.get('/api/tanks', async (_req, res) => {
                 currentLevel: 5000,
                 fuelType: {
                     name: "Petrol",
-                    id: 1
+                    id: 1,
+                    price: 95.50
                 }
             },
             {
@@ -57,7 +58,8 @@ app.get('/api/tanks', async (_req, res) => {
                 currentLevel: 7500,
                 fuelType: {
                     name: "Petrol",
-                    id: 1
+                    id: 1,
+                    price: 95.50
                 }
             },
             {
@@ -67,7 +69,8 @@ app.get('/api/tanks', async (_req, res) => {
                 currentLevel: 8000,
                 fuelType: {
                     name: "Diesel",
-                    id: 2
+                    id: 2,
+                    price: 89.25
                 }
             }
         ];
@@ -120,10 +123,10 @@ app.put('/api/tanks/:id', async (req, res) => {
 app.get('/api/pumps', async (_req, res) => {
     try {
         const mockPumps = [
-            { id: 1, name: "Petrol Pump 1", fuelType: { name: "Petrol" } },
-            { id: 2, name: "Petrol Pump 2", fuelType: { name: "Petrol" } },
-            { id: 3, name: "Diesel Pump 1", fuelType: { name: "Diesel" } },
-            { id: 4, name: "Diesel Pump 2", fuelType: { name: "Diesel" } }
+            { id: 1, name: "Petrol Pump 1", fuelType: { name: "Petrol", price: 95.50 } },
+            { id: 2, name: "Petrol Pump 2", fuelType: { name: "Petrol", price: 95.50 } },
+            { id: 3, name: "Diesel Pump 1", fuelType: { name: "Diesel", price: 89.25 } },
+            { id: 4, name: "Diesel Pump 2", fuelType: { name: "Diesel", price: 89.25 } }
         ];
         res.json(mockPumps);
     } catch (error: any) {
@@ -134,8 +137,24 @@ app.get('/api/pumps', async (_req, res) => {
 app.get('/api/clients', async (_req, res) => {
     try {
         const mockClients = [
-            { id: 1, name: "ABC Transport", ownerName: "John Doe", phone: "9876543210", address: "123 Main St", creditLimit: 50000, balance: 0 },
-            { id: 2, name: "XYZ Logistics", ownerName: "Jane Smith", phone: "9876543211", address: "456 Oak Ave", creditLimit: 75000, balance: 0 }
+            {
+                id: 1,
+                name: "ABC Transport",
+                ownerName: "John Doe",
+                phone: "9876543210",
+                address: "123 Main St",
+                creditLimit: "50000",
+                balance: "0"
+            },
+            {
+                id: 2,
+                name: "XYZ Logistics",
+                ownerName: "Jane Smith",
+                phone: "9876543211",
+                address: "456 Oak Ave",
+                creditLimit: "75000",
+                balance: "0"
+            }
         ];
         res.json(mockClients);
     } catch (error: any) {
@@ -146,7 +165,30 @@ app.get('/api/clients', async (_req, res) => {
 app.get('/api/credits', async (_req, res) => {
     try {
         const mockCredits = [
-            { id: 1, clientId: 1, amount: 1000, description: "Credit transaction", date: new Date().toISOString() }
+            {
+                id: 1,
+                clientId: 1,
+                amount: 1000,
+                description: "Credit transaction",
+                date: new Date().toISOString(),
+                status: "pending",
+                fuelTypeId: 1,
+                litres: 10.5,
+                pricePerLitre: 95.50,
+                totalAmount: 1002.75
+            },
+            {
+                id: 2,
+                clientId: 2,
+                amount: 1500,
+                description: "Diesel credit",
+                date: new Date().toISOString(),
+                status: "paid",
+                fuelTypeId: 2,
+                litres: 16.8,
+                pricePerLitre: 89.25,
+                totalAmount: 1499.40
+            }
         ];
         res.json(mockCredits);
     } catch (error: any) {
@@ -157,7 +199,26 @@ app.get('/api/credits', async (_req, res) => {
 app.get('/api/cash-receipts', async (_req, res) => {
     try {
         const mockReceipts = [
-            { id: 1, amount: 500, date: new Date().toISOString(), description: "Cash sale" }
+            {
+                id: 1,
+                amount: 500,
+                date: new Date().toISOString(),
+                description: "Cash sale",
+                clientId: 1,
+                fuelTypeId: 1,
+                litres: 5.2,
+                pricePerLitre: 95.50
+            },
+            {
+                id: 2,
+                amount: 750,
+                date: new Date().toISOString(),
+                description: "Cash sale",
+                clientId: 2,
+                fuelTypeId: 2,
+                litres: 8.4,
+                pricePerLitre: 89.25
+            }
         ];
         res.json(mockReceipts);
     } catch (error: any) {
@@ -168,7 +229,26 @@ app.get('/api/cash-receipts', async (_req, res) => {
 app.get('/api/online-payments', async (_req, res) => {
     try {
         const mockPayments = [
-            { id: 1, amount: 300, date: new Date().toISOString(), method: "UPI" }
+            {
+                id: 1,
+                amount: 300,
+                date: new Date().toISOString(),
+                method: "UPI",
+                clientId: 1,
+                fuelTypeId: 1,
+                litres: 3.1,
+                pricePerLitre: 95.50
+            },
+            {
+                id: 2,
+                amount: 450,
+                date: new Date().toISOString(),
+                method: "Card",
+                clientId: 2,
+                fuelTypeId: 2,
+                litres: 5.0,
+                pricePerLitre: 89.25
+            }
         ];
         res.json(mockPayments);
     } catch (error: any) {
@@ -182,9 +262,62 @@ app.get('/api/reports/summary', async (_req, res) => {
             tanks: 3,
             pumps: 4,
             clients: 2,
-            sales: 0
+            sales: 0,
+            todaySales: 1250,
+            todayProfit: 150,
+            totalCredits: 2500,
+            unpaidCredits: 1000
         };
         res.json(summary);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Add missing endpoints that frontend might need
+app.get('/api/prices/current', async (_req, res) => {
+    try {
+        const prices = [
+            { fuelTypeId: 1, price: 95.50, fuelType: { name: "Petrol" } },
+            { fuelTypeId: 2, price: 89.25, fuelType: { name: "Diesel" } }
+        ];
+        res.json(prices);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/sales', async (_req, res) => {
+    try {
+        const sales = [
+            { id: 1, clientId: 1, amount: 500, date: new Date().toISOString(), fuelTypeId: 1, litres: 5.2 },
+            { id: 2, clientId: 2, amount: 750, date: new Date().toISOString(), fuelTypeId: 2, litres: 8.4 }
+        ];
+        res.json(sales);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/purchases', async (_req, res) => {
+    try {
+        const purchases = [
+            { id: 1, fuelTypeId: 1, litres: 1000, pricePerLitre: 90.00, totalAmount: 90000, date: new Date().toISOString() },
+            { id: 2, fuelTypeId: 2, litres: 1200, pricePerLitre: 85.00, totalAmount: 102000, date: new Date().toISOString() }
+        ];
+        res.json(purchases);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/prices', async (_req, res) => {
+    try {
+        const prices = [
+            { id: 1, fuelTypeId: 1, perLitre: 95.50, active: true, date: new Date().toISOString() },
+            { id: 2, fuelTypeId: 2, perLitre: 89.25, active: true, date: new Date().toISOString() }
+        ];
+        res.json(prices);
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
