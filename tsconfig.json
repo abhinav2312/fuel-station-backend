@@ -19,6 +19,7 @@
         "noEmitOnError": false
     },
     "include": [
-        "src"
+        "src",
+        "prisma"
     ]
 }

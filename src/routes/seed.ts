@@ -14,12 +14,15 @@ export function createSeedRouter(prisma: PrismaClient) {
             if (existingFuelTypes > 0) {
                 return res.json({
                     message: 'Database already has data',
-                    fuelTypes: existingFuelTypes
+                    fuelTypes: existingFuelTypes,
+                    status: 'skipped'
                 });
             }
 
+            // Use the same seed logic as the main seed file
+            // This ensures consistency between manual and automatic seeding
+
             // Create fuel types
-            console.log('📝 Creating fuel types...');
             const petrol = await prisma.fuelType.create({
                 data: { name: 'Petrol' }
             });
@@ -32,53 +35,20 @@ export function createSeedRouter(prisma: PrismaClient) {
                 data: { name: 'Diesel' }
             });
 
-            console.log('✅ Fuel types created');
-
             // Create tanks
-            console.log('🛢️  Creating tanks...');
             const tanks = [
-                {
-                    name: 'Petrol Tank 1',
-                    capacityLit: 10000,
-                    currentLevel: 0,
-                    fuelTypeId: petrol.id
-                },
-                {
-                    name: 'Petrol Tank 2',
-                    capacityLit: 10000,
-                    currentLevel: 0,
-                    fuelTypeId: petrol.id
-                },
-                {
-                    name: 'Premium Petrol Tank',
-                    capacityLit: 8000,
-                    currentLevel: 0,
-                    fuelTypeId: premiumPetrol.id
-                },
-                {
-                    name: 'Diesel Tank 1',
-                    capacityLit: 12000,
-                    currentLevel: 0,
-                    fuelTypeId: diesel.id
-                },
-                {
-                    name: 'Diesel Tank 2',
-                    capacityLit: 12000,
-                    currentLevel: 0,
-                    fuelTypeId: diesel.id
-                }
+                { name: 'Petrol Tank 1', capacityLit: 10000, currentLevel: 0, fuelTypeId: petrol.id },
+                { name: 'Petrol Tank 2', capacityLit: 10000, currentLevel: 0, fuelTypeId: petrol.id },
+                { name: 'Premium Petrol Tank', capacityLit: 8000, currentLevel: 0, fuelTypeId: premiumPetrol.id },
+                { name: 'Diesel Tank 1', capacityLit: 12000, currentLevel: 0, fuelTypeId: diesel.id },
+                { name: 'Diesel Tank 2', capacityLit: 12000, currentLevel: 0, fuelTypeId: diesel.id }
             ];
 
             for (const tankData of tanks) {
-                await prisma.tank.create({
-                    data: tankData
-                });
+                await prisma.tank.create({ data: tankData });
             }
 
-            console.log('✅ Tanks created');
-
             // Create pumps
-            console.log('⛽ Creating pumps...');
             const pumps = [
                 { name: 'Petrol Pump 1', fuelTypeId: petrol.id },
                 { name: 'Petrol Pump 2', fuelTypeId: petrol.id },
@@ -92,37 +62,26 @@ export function createSeedRouter(prisma: PrismaClient) {
             ];
 
             for (const pumpData of pumps) {
-                await prisma.pump.create({
-                    data: pumpData
-                });
+                await prisma.pump.create({ data: pumpData });
             }
 
-            console.log('✅ Pumps created');
-
             // Set initial prices
-            console.log('💰 Setting initial prices...');
             const prices = [
-                { fuelTypeId: petrol.id, perLitre: 0, date: new Date() },
-                { fuelTypeId: premiumPetrol.id, perLitre: 0, date: new Date() },
-                { fuelTypeId: diesel.id, perLitre: 0, date: new Date() }
+                { fuelTypeId: petrol.id, perLitre: 0, active: true },
+                { fuelTypeId: premiumPetrol.id, perLitre: 0, active: true },
+                { fuelTypeId: diesel.id, perLitre: 0, active: true }
             ];
 
             for (const priceData of prices) {
-                await prisma.price.create({
-                    data: priceData
-                });
+                await prisma.price.create({ data: priceData });
             }
 
-            console.log('✅ Initial prices set');
-
             // Create sample clients
-            console.log('👥 Creating sample clients...');
             const clients = [
                 {
                     name: 'ABC Transport',
                     ownerName: 'John Doe',
                     phone: '9876543210',
-                    email: 'john@abctransport.com',
                     address: '123 Main St, City',
                     creditLimit: 50000,
                     balance: 0
@@ -131,7 +90,6 @@ export function createSeedRouter(prisma: PrismaClient) {
                     name: 'XYZ Logistics',
                     ownerName: 'Jane Smith',
                     phone: '9876543211',
-                    email: 'jane@xyzlogistics.com',
                     address: '456 Oak Ave, City',
                     creditLimit: 75000,
                     balance: 0
@@ -139,15 +97,12 @@ export function createSeedRouter(prisma: PrismaClient) {
             ];
 
             for (const clientData of clients) {
-                await prisma.client.create({
-                    data: clientData
-                });
+                await prisma.client.create({ data: clientData });
             }
-
-            console.log('✅ Sample clients created');
 
             res.json({
                 message: 'Database seeded successfully!',
+                status: 'completed',
                 data: {
                     fuelTypes: 3,
                     tanks: 5,
@@ -161,7 +116,8 @@ export function createSeedRouter(prisma: PrismaClient) {
             console.error('❌ Seed failed:', error);
             res.status(500).json({
                 message: 'Failed to seed database',
-                error: error.message
+                error: error.message,
+                status: 'failed'
             });
         }
     });

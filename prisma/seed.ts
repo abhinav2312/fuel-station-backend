@@ -3,110 +3,162 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 
 async function main() {
-    const diesel = await prisma.fuelType.upsert({
-        where: { name: 'Diesel' },
-        update: {},
-        create: { name: 'Diesel' },
+    console.log('🌱 Starting database seed...');
+
+    // Check if data already exists
+    const existingFuelTypes = await prisma.fuelType.count();
+    if (existingFuelTypes > 0) {
+        console.log('✅ Database already has data, skipping seed');
+        return;
+    }
+
+    // 1. Create Fuel Types
+    console.log('📝 Creating fuel types...');
+    const petrol = await prisma.fuelType.create({
+        data: { name: 'Petrol' }
     });
-    const petrol = await prisma.fuelType.upsert({
-        where: { name: 'Petrol' },
-        update: {},
-        create: { name: 'Petrol' },
-    });
-    const premiumPetrol = await prisma.fuelType.upsert({
-        where: { name: 'Premium Petrol' },
-        update: {},
-        create: { name: 'Premium Petrol' },
+
+    const premiumPetrol = await prisma.fuelType.create({
+        data: { name: 'Premium Petrol' }
     });
 
-    // Ensure one active price per fuel type
-    const dieselActive = await prisma.price.findFirst({ where: { fuelTypeId: diesel.id, active: true } });
-    if (!dieselActive) {
-        await prisma.price.create({ data: { fuelTypeId: diesel.id, perLitre: 1.5, active: true } });
-    }
-    const petrolActive = await prisma.price.findFirst({ where: { fuelTypeId: petrol.id, active: true } });
-    if (!petrolActive) {
-        await prisma.price.create({ data: { fuelTypeId: petrol.id, perLitre: 1.7, active: true } });
-    }
-    const premiumPetrolActive = await prisma.price.findFirst({ where: { fuelTypeId: premiumPetrol.id, active: true } });
-    if (!premiumPetrolActive) {
-        await prisma.price.create({ data: { fuelTypeId: premiumPetrol.id, perLitre: 1.9, active: true } });
-    }
+    const diesel = await prisma.fuelType.create({
+        data: { name: 'Diesel' }
+    });
 
-    // Ensure tanks exist (for storage)
-    const dieselTank = await prisma.tank.findFirst({ where: { name: 'Main Diesel Storage' } });
-    if (!dieselTank) {
-        await prisma.tank.create({ data: { name: 'Main Diesel Storage', capacityLit: 10000, fuelTypeId: diesel.id, currentLevel: 8000 } });
-    }
-    const petrolTank = await prisma.tank.findFirst({ where: { name: 'Petrol Storage' } });
-    if (!petrolTank) {
-        await prisma.tank.create({ data: { name: 'Petrol Storage', capacityLit: 8000, fuelTypeId: petrol.id, currentLevel: 6000 } });
-    }
-    const premiumPetrolTank = await prisma.tank.findFirst({ where: { name: 'Premium Petrol Storage' } });
-    if (!premiumPetrolTank) {
-        await prisma.tank.create({ data: { name: 'Premium Petrol Storage', capacityLit: 6000, fuelTypeId: premiumPetrol.id, currentLevel: 4000 } });
-    }
+    console.log('✅ Fuel types created');
 
-    // Create pumps for each fuel type
-    // Petrol pumps (3 pumps)
-    for (let i = 1; i <= 3; i++) {
-        const pumpName = `Petrol Pump ${i}`;
-        const existingPump = await prisma.pump.findFirst({ where: { name: pumpName } });
-        if (!existingPump) {
-            await prisma.pump.create({ data: { name: pumpName, fuelTypeId: petrol.id } });
+    // 2. Create Storage Tanks
+    console.log('🛢️  Creating storage tanks...');
+    const tanks = [
+        {
+            name: 'Petrol Tank 1',
+            capacityLit: 10000,
+            currentLevel: 0,
+            fuelTypeId: petrol.id
+        },
+        {
+            name: 'Petrol Tank 2',
+            capacityLit: 10000,
+            currentLevel: 0,
+            fuelTypeId: petrol.id
+        },
+        {
+            name: 'Premium Petrol Tank',
+            capacityLit: 8000,
+            currentLevel: 0,
+            fuelTypeId: premiumPetrol.id
+        },
+        {
+            name: 'Diesel Tank 1',
+            capacityLit: 12000,
+            currentLevel: 0,
+            fuelTypeId: diesel.id
+        },
+        {
+            name: 'Diesel Tank 2',
+            capacityLit: 12000,
+            currentLevel: 0,
+            fuelTypeId: diesel.id
         }
-    }
+    ];
 
-    // Diesel pumps (4 pumps)
-    for (let i = 1; i <= 4; i++) {
-        const pumpName = `Diesel Pump ${i}`;
-        const existingPump = await prisma.pump.findFirst({ where: { name: pumpName } });
-        if (!existingPump) {
-            await prisma.pump.create({ data: { name: pumpName, fuelTypeId: diesel.id } });
-        }
-    }
-
-    // Premium Petrol pumps (2 pumps)
-    for (let i = 1; i <= 2; i++) {
-        const pumpName = `Premium Petrol Pump ${i}`;
-        const existingPump = await prisma.pump.findFirst({ where: { name: pumpName } });
-        if (!existingPump) {
-            await prisma.pump.create({ data: { name: pumpName, fuelTypeId: premiumPetrol.id } });
-        }
-    }
-
-    let client = await prisma.client.findFirst({ where: { name: 'Acme Logistics' } });
-    if (!client) {
-        client = await prisma.client.create({
-            data: {
-                name: 'Acme Logistics',
-                ownerName: 'John Smith',
-                phone: '+1234567890',
-                creditLimit: 2000
-            }
+    for (const tankData of tanks) {
+        await prisma.tank.create({
+            data: tankData
         });
     }
 
-    const dieselPrice = await prisma.price.findFirst({ where: { fuelTypeId: diesel.id, active: true } });
-    const dieselPump = await prisma.pump.findFirst({ where: { fuelTypeId: diesel.id } });
+    console.log('✅ Storage tanks created');
 
-    if (dieselPrice && dieselPump) {
-        await prisma.sale.create({
-            data: {
-                pumpId: dieselPump.id,
-                litres: 50,
-                pricePerLitre: dieselPrice.perLitre,
-                totalAmount: 50 * Number(dieselPrice.perLitre),
-                method: 'CASH',
-                note: 'Initial sale example',
-            },
+    // 3. Create Fuel Pumps
+    console.log('⛽ Creating fuel pumps...');
+    const pumps = [
+        // Petrol Pumps
+        { name: 'Petrol Pump 1', fuelTypeId: petrol.id },
+        { name: 'Petrol Pump 2', fuelTypeId: petrol.id },
+        { name: 'Petrol Pump 3', fuelTypeId: petrol.id },
+
+        // Premium Petrol Pumps
+        { name: 'Premium Petrol Pump 1', fuelTypeId: premiumPetrol.id },
+        { name: 'Premium Petrol Pump 2', fuelTypeId: premiumPetrol.id },
+
+        // Diesel Pumps
+        { name: 'Diesel Pump 1', fuelTypeId: diesel.id },
+        { name: 'Diesel Pump 2', fuelTypeId: diesel.id },
+        { name: 'Diesel Pump 3', fuelTypeId: diesel.id },
+        { name: 'Diesel Pump 4', fuelTypeId: diesel.id }
+    ];
+
+    for (const pumpData of pumps) {
+        await prisma.pump.create({
+            data: pumpData
         });
     }
 
-    console.log('Seed completed');
+    console.log('✅ Fuel pumps created');
+
+    // 4. Set Initial Prices (set to 0 - user should update with real prices)
+    console.log('💰 Setting initial prices...');
+    const prices = [
+        { fuelTypeId: petrol.id, perLitre: 0, active: true },
+        { fuelTypeId: premiumPetrol.id, perLitre: 0, active: true },
+        { fuelTypeId: diesel.id, perLitre: 0, active: true }
+    ];
+
+    for (const priceData of prices) {
+        await prisma.price.create({
+            data: priceData
+        });
+    }
+
+    console.log('✅ Initial prices set');
+
+    // 5. Create Sample Clients
+    console.log('👥 Creating sample clients...');
+    const clients = [
+        {
+            name: 'ABC Transport',
+            ownerName: 'John Doe',
+            phone: '9876543210',
+            address: '123 Main St, City',
+            creditLimit: 50000,
+            balance: 0
+        },
+        {
+            name: 'XYZ Logistics',
+            ownerName: 'Jane Smith',
+            phone: '9876543211',
+            address: '456 Oak Ave, City',
+            creditLimit: 75000,
+            balance: 0
+        }
+    ];
+
+    for (const clientData of clients) {
+        await prisma.client.create({
+            data: clientData
+        });
+    }
+
+    console.log('✅ Sample clients created');
+
+    console.log('🎉 Database seed completed successfully!');
+    console.log('📋 Summary:');
+    console.log('   • 3 Fuel types (Petrol, Premium Petrol, Diesel)');
+    console.log('   • 5 Storage tanks (empty - ready for fuel)');
+    console.log('   • 9 Fuel pumps (3 Petrol, 2 Premium, 4 Diesel)');
+    console.log('   • Fuel prices set to 0 (update with current market prices)');
+    console.log('   • 2 Sample clients with credit limits');
+    console.log('🚀 Your fuel station is ready for business!');
 }
 
-main().finally(async () => {
-    await prisma.$disconnect();
-});
+main()
+    .catch((e) => {
+        console.error('❌ Seed failed:', e);
+        process.exit(1);
+    })
+    .finally(async () => {
+        await prisma.$disconnect();
+    });
 

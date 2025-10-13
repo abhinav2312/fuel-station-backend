@@ -3,9 +3,18 @@ import express from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
 
+// DATABASE_URL is automatically provided by Render when you connect a PostgreSQL database
+// No need to set a fallback - Render will provide the correct connection string
+
 const prisma = new PrismaClient();
 const app = express();
-app.use(cors());
+
+// Configure CORS for production
+app.use(cors({
+    origin: 'https://fuelstationpro.netlify.app',
+    credentials: true
+}));
+
 app.use(express.json());
 
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
@@ -14,38 +23,13 @@ app.get('/health', (_req, res) => {
     res.json({ ok: true });
 });
 
-// Database diagnostic endpoint
-app.get('/api/db-check', async (_req, res) => {
+// Production status endpoint
+app.get('/api/status', async (_req, res) => {
     try {
-        console.log('🔍 Checking database connection...');
-
-        // Test basic connection
         await prisma.$connect();
-        console.log('✅ Database connected');
-
-        // Test if tables exist
-        const fuelTypes = await prisma.fuelType.count();
-        const tanks = await prisma.tank.count();
-        const pumps = await prisma.pump.count();
-
-        res.json({
-            status: 'connected',
-            tables: {
-                fuelTypes,
-                tanks,
-                pumps
-            },
-            message: 'Database is accessible'
-        });
-
-    } catch (error: any) {
-        console.error('❌ Database check failed:', error);
-        res.status(500).json({
-            status: 'error',
-            error: error.message,
-            code: error.code,
-            meta: error.meta
-        });
+        res.json({ status: 'ok', database: 'connected' });
+    } catch (error) {
+        res.status(500).json({ status: 'error', database: 'disconnected' });
     }
 });
 
