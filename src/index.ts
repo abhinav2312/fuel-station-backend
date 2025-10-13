@@ -38,30 +38,27 @@ app.get('/api/tanks', async (_req, res) => {
     try {
         console.log('🔍 Testing tanks endpoint...');
 
-        // First, test basic connection
-        await prisma.$connect();
-        console.log('✅ Database connected');
+        // Test if table exists first
+        try {
+            const tanks = await prisma.tank.findMany();
+            console.log('✅ Tanks query successful:', tanks.length, 'tanks found');
+            res.json(tanks);
+        } catch (tableError: any) {
+            console.log('❌ Tank table error:', tableError.message);
 
-        // Test simple query first
-        const tankCount = await prisma.tank.count();
-        console.log('✅ Tank count:', tankCount);
-
-        // If count works, try the full query
-        const tanks = await prisma.tank.findMany({
-            include: {
-                fuelType: {
-                    select: { name: true }
-                }
+            // If table doesn't exist, return empty array for now
+            if (tableError.code === 'P2021' || tableError.message.includes('does not exist')) {
+                console.log('📝 Tank table does not exist, returning empty array');
+                res.json([]);
+            } else {
+                throw tableError;
             }
-        });
-        console.log('✅ Tanks query successful:', tanks.length, 'tanks found');
-        res.json(tanks);
+        }
     } catch (error: any) {
         console.error('❌ Tanks endpoint failed:', error);
         res.status(500).json({
             error: error.message,
-            code: error.code,
-            stack: error.stack
+            code: error.code
         });
     }
 });
@@ -166,6 +163,41 @@ import { createSeedRouter } from './routes/seed';
 // app.use('/api/validation', createValidationRouter(prisma));
 app.use('/api/seed', createSeedRouter(prisma));
 // app.use('/api/logs', logsRouter);
+
+// Database initialization endpoint
+app.post('/api/init-db', async (_req, res) => {
+    try {
+        console.log('🔧 Initializing database...');
+
+        // Try to create the database schema
+        await prisma.$executeRaw`CREATE SCHEMA IF NOT EXISTS public;`;
+        console.log('✅ Schema created');
+
+        // Try to seed the database
+        const seedResponse = await fetch('https://fuel-station-backend.onrender.com/api/seed', {
+            method: 'POST'
+        });
+
+        if (seedResponse.ok) {
+            const result = await seedResponse.json();
+            res.json({
+                message: 'Database initialized successfully',
+                seedResult: result
+            });
+        } else {
+            res.json({
+                message: 'Database schema created, but seeding failed',
+                seedError: await seedResponse.text()
+            });
+        }
+    } catch (error: any) {
+        console.error('❌ Database initialization failed:', error);
+        res.status(500).json({
+            error: error.message,
+            code: error.code
+        });
+    }
+});
 
 app.listen(PORT, () => {
     console.log(`Backend listening on http://localhost:${PORT}`);
