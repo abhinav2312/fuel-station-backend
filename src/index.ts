@@ -123,10 +123,10 @@ app.put('/api/tanks/:id', async (req, res) => {
 app.get('/api/pumps', async (_req, res) => {
     try {
         const mockPumps = [
-            { id: 1, name: "Petrol Pump 1", fuelType: { name: "Petrol", price: 95.50 } },
-            { id: 2, name: "Petrol Pump 2", fuelType: { name: "Petrol", price: 95.50 } },
-            { id: 3, name: "Diesel Pump 1", fuelType: { name: "Diesel", price: 89.25 } },
-            { id: 4, name: "Diesel Pump 2", fuelType: { name: "Diesel", price: 89.25 } }
+            { id: 1, name: "Petrol Pump 1", fuelType: { id: 1, name: "Petrol", price: 95.50 } },
+            { id: 2, name: "Petrol Pump 2", fuelType: { id: 1, name: "Petrol", price: 95.50 } },
+            { id: 3, name: "Diesel Pump 1", fuelType: { id: 2, name: "Diesel", price: 89.25 } },
+            { id: 4, name: "Diesel Pump 2", fuelType: { id: 2, name: "Diesel", price: 89.25 } }
         ];
         res.json(mockPumps);
     } catch (error: any) {
@@ -304,10 +304,12 @@ app.get('/api/reports/summary', async (req, res) => {
 // Add missing endpoints that frontend might need
 app.get('/api/prices/current', async (_req, res) => {
     try {
-        const prices = [
-            { fuelTypeId: 1, price: 95.50, fuelType: { name: "Petrol" } },
-            { fuelTypeId: 2, price: 89.25, fuelType: { name: "Diesel" } }
-        ];
+        // Return prices in the format the frontend expects
+        const prices = {
+            petrol: 95.50,
+            diesel: 89.25,
+            premiumpetrol: null
+        };
         res.json(prices);
     } catch (error: any) {
         res.status(500).json({ error: error.message });
@@ -329,8 +331,36 @@ app.get('/api/sales', async (_req, res) => {
 app.get('/api/purchases', async (_req, res) => {
     try {
         const purchases = [
-            { id: 1, fuelTypeId: 1, litres: 1000, pricePerLitre: 90.00, totalAmount: 90000, date: new Date().toISOString() },
-            { id: 2, fuelTypeId: 2, litres: 1200, pricePerLitre: 85.00, totalAmount: 102000, date: new Date().toISOString() }
+            {
+                id: 1,
+                tankId: 1,
+                litres: 1000,
+                unitCost: 90.00,
+                totalCost: 90000,
+                date: new Date().toISOString(),
+                tank: {
+                    id: 1,
+                    name: "Petrol Tank 1",
+                    fuelType: { id: 1, name: "Petrol" },
+                    currentLevel: 5000,
+                    capacityLit: 10000
+                }
+            },
+            {
+                id: 2,
+                tankId: 2,
+                litres: 1200,
+                unitCost: 85.00,
+                totalCost: 102000,
+                date: new Date().toISOString(),
+                tank: {
+                    id: 2,
+                    name: "Diesel Tank 1",
+                    fuelType: { id: 2, name: "Diesel" },
+                    currentLevel: 8000,
+                    capacityLit: 12000
+                }
+            }
         ];
         res.json(purchases);
     } catch (error: any) {
@@ -350,14 +380,70 @@ app.get('/api/prices', async (_req, res) => {
     }
 });
 
-// Add missing endpoints that frontend needs
-app.get('/api/validation', async (_req, res) => {
+// Add missing prices endpoints
+app.get('/api/prices/combined', async (_req, res) => {
     try {
-        const validation = [
-            { id: 1, type: "tank_level", message: "Petrol Tank 1 is 50% full", status: "info", date: new Date().toISOString() },
-            { id: 2, type: "price_update", message: "Diesel price updated to ₹89.25", status: "success", date: new Date().toISOString() }
+        const combined = [
+            {
+                date: new Date().toISOString().split('T')[0],
+                petrol: 95.50,
+                diesel: 89.25,
+                premiumpetrol: null
+            },
+            {
+                date: new Date(Date.now() - 86400000).toISOString().split('T')[0],
+                petrol: 94.50,
+                diesel: 88.25,
+                premiumpetrol: null
+            },
+            {
+                date: new Date(Date.now() - 172800000).toISOString().split('T')[0],
+                petrol: 93.50,
+                diesel: 87.25,
+                premiumpetrol: null
+            }
         ];
-        res.json(validation);
+        res.json(combined);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/prices/set', async (req, res) => {
+    try {
+        const { prices, date } = req.body;
+        console.log('Setting prices:', prices, 'for date:', date);
+
+        // Simulate price setting
+        const result = {
+            success: true,
+            message: 'Prices updated successfully',
+            data: { prices, date }
+        };
+        res.json(result);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Add missing endpoints that frontend needs
+app.get('/api/validation', async (req, res) => {
+    try {
+        const { date } = req.query;
+
+        // Return validation data structure that frontend expects
+        const validationData = {
+            date: date || new Date().toISOString().split('T')[0],
+            grossSales: 125000,
+            cashReceipts: 80000,
+            onlinePayments: 20000,
+            creditSales: 25000,
+            totalReceived: 100000,
+            difference: 25000,
+            isBalanced: false
+        };
+
+        res.json(validationData);
     } catch (error: any) {
         res.status(500).json({ error: error.message });
     }
