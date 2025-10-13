@@ -37,6 +37,16 @@ app.get('/api/status', async (_req, res) => {
 app.get('/api/tanks', async (_req, res) => {
     try {
         console.log('🔍 Testing tanks endpoint...');
+
+        // First, test basic connection
+        await prisma.$connect();
+        console.log('✅ Database connected');
+
+        // Test simple query first
+        const tankCount = await prisma.tank.count();
+        console.log('✅ Tank count:', tankCount);
+
+        // If count works, try the full query
         const tanks = await prisma.tank.findMany({
             include: {
                 fuelType: {
@@ -50,8 +60,75 @@ app.get('/api/tanks', async (_req, res) => {
         console.error('❌ Tanks endpoint failed:', error);
         res.status(500).json({
             error: error.message,
-            code: error.code
+            code: error.code,
+            stack: error.stack
         });
+    }
+});
+
+// Add basic endpoints for other data
+app.get('/api/pumps', async (_req, res) => {
+    try {
+        const pumps = await prisma.pump.findMany({
+            include: {
+                fuelType: {
+                    select: { name: true }
+                }
+            }
+        });
+        res.json(pumps);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/clients', async (_req, res) => {
+    try {
+        const clients = await prisma.client.findMany();
+        res.json(clients);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/credits', async (_req, res) => {
+    try {
+        const credits = await prisma.credit.findMany();
+        res.json(credits);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/cash-receipts', async (_req, res) => {
+    try {
+        const receipts = await prisma.cashReceipt.findMany();
+        res.json(receipts);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/online-payments', async (_req, res) => {
+    try {
+        const payments = await prisma.onlinePayment.findMany();
+        res.json(payments);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.get('/api/reports/summary', async (_req, res) => {
+    try {
+        const summary = {
+            tanks: await prisma.tank.count(),
+            pumps: await prisma.pump.count(),
+            clients: await prisma.client.count(),
+            sales: await prisma.sale.count()
+        };
+        res.json(summary);
+    } catch (error: any) {
+        res.status(500).json({ error: error.message });
     }
 });
 
