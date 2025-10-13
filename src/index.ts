@@ -9,9 +9,24 @@ import { PrismaClient } from '@prisma/client';
 const prisma = new PrismaClient();
 const app = express();
 
-// Configure CORS for production
+// Smart CORS configuration based on environment
+const getCorsOrigins = () => {
+    const environment = process.env.NODE_ENV || 'production';
+    const frontendUrl = process.env.FRONTEND_URL;
+
+    if (frontendUrl) {
+        return [frontendUrl];
+    }
+
+    if (environment === 'local') {
+        return ['http://localhost:5173'];
+    } else {
+        return ['https://fuelstationpro.netlify.app'];
+    }
+};
+
 app.use(cors({
-    origin: 'https://fuelstationpro.netlify.app',
+    origin: getCorsOrigins(),
     credentials: true
 }));
 
