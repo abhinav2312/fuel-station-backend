@@ -256,17 +256,44 @@ app.get('/api/online-payments', async (_req, res) => {
     }
 });
 
-app.get('/api/reports/summary', async (_req, res) => {
+app.get('/api/reports/summary', async (req, res) => {
     try {
+        const { period = 'daily', date } = req.query;
+
+        // Create a proper summary structure that matches frontend expectations
         const summary = {
+            period: period as string,
+            start: date ? new Date(date as string).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            end: date ? new Date(date as string).toISOString().split('T')[0] : new Date().toISOString().split('T')[0],
+            totals: {
+                litres: 1500,
+                petrolLitres: 1000,
+                dieselLitres: 500,
+                premiumPetrolLitres: 0,
+                revenue: 125000,
+                profit: 15000
+            },
+            revenues: {
+                petrolRevenue: 95000,
+                dieselRevenue: 30000,
+                premiumPetrolRevenue: 0
+            },
+            financials: {
+                totalRevenue: 125000,
+                creditToCollect: 25000,
+                moneyReceived: 100000,
+                cashReceived: 80000,
+                onlineReceived: 20000
+            },
+            // Keep the simple fields for backward compatibility
             tanks: 3,
             pumps: 4,
             clients: 2,
-            sales: 0,
+            sales: 1250,
             todaySales: 1250,
             todayProfit: 150,
-            totalCredits: 2500,
-            unpaidCredits: 1000
+            totalCredits: 25000,
+            unpaidCredits: 10000
         };
         res.json(summary);
     } catch (error: any) {
