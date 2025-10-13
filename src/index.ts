@@ -40,7 +40,16 @@ app.get('/api/tanks', async (_req, res) => {
 
         // Test if table exists first
         try {
-            const tanks = await prisma.tank.findMany();
+            const tanks = await prisma.tank.findMany({
+                include: {
+                    fuelType: {
+                        select: {
+                            name: true,
+                            id: true
+                        }
+                    }
+                }
+            });
             console.log('✅ Tanks query successful:', tanks.length, 'tanks found');
             res.json(tanks);
         } catch (tableError: any) {
@@ -56,6 +65,38 @@ app.get('/api/tanks', async (_req, res) => {
         }
     } catch (error: any) {
         console.error('❌ Tanks endpoint failed:', error);
+        res.status(500).json({
+            error: error.message,
+            code: error.code
+        });
+    }
+});
+
+// PUT endpoint for updating tanks
+app.put('/api/tanks/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updateData = req.body;
+
+        console.log('🔧 Updating tank:', id, updateData);
+
+        const updatedTank = await prisma.tank.update({
+            where: { id: parseInt(id) },
+            data: updateData,
+            include: {
+                fuelType: {
+                    select: {
+                        name: true,
+                        id: true
+                    }
+                }
+            }
+        });
+
+        console.log('✅ Tank updated successfully');
+        res.json(updatedTank);
+    } catch (error: any) {
+        console.error('❌ Tank update failed:', error);
         res.status(500).json({
             error: error.message,
             code: error.code
