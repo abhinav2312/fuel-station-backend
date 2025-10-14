@@ -24,7 +24,10 @@ const getCorsOrigins = () => {
     if (environment === 'development') {
         return ['http://localhost:5173'];
     } else {
-        return ['https://fuelstationpro.netlify.app'];
+        return [
+            'https://fuelstationpro.netlify.app',
+            'https://fuelmanagementpro.netlify.app'
+        ];
     }
 };
 
