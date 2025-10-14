@@ -89,9 +89,9 @@ async function main() {
     // 4. Set Initial Prices (set to 0 - user should update with real prices)
     console.log('💰 Setting initial prices...');
     const prices = [
-        { fuelTypeId: petrol.id, perLitre: 0, active: true },
-        { fuelTypeId: premiumPetrol.id, perLitre: 0, active: true },
-        { fuelTypeId: diesel.id, perLitre: 0, active: true }
+        { fuelTypeId: petrol.id, perLitre: 0, isActive: true },
+        { fuelTypeId: premiumPetrol.id, perLitre: 0, isActive: true },
+        { fuelTypeId: diesel.id, perLitre: 0, isActive: true }
     ];
 
     for (const priceData of prices) {

@@ -15,7 +15,7 @@ export function createPricesRouter(prisma: PrismaClient) {
         const prices = await Promise.all(
             fuelTypes.map(async (ft) => {
                 const price = await prisma.price.findFirst({
-                    where: { fuelTypeId: ft.id, active: true },
+                    where: { fuelTypeId: ft.id, isActive: true },
                     orderBy: { createdAt: 'desc' }
                 });
                 return {
@@ -43,8 +43,8 @@ export function createPricesRouter(prisma: PrismaClient) {
         const { fuelTypeId, perLitre } = req.body ?? {};
         // Deactivate current active price for this fuel type, then create new
         await prisma.$transaction(async (tx) => {
-            await tx.price.updateMany({ where: { fuelTypeId, active: true }, data: { active: false } });
-            await tx.price.create({ data: { fuelTypeId, perLitre, active: true } });
+            await tx.price.updateMany({ where: { fuelTypeId, isActive: true }, data: { isActive: false } });
+            await tx.price.create({ data: { fuelTypeId, perLitre, isActive: true } });
         });
         res.status(201).json({ ok: true });
     });
@@ -86,8 +86,8 @@ export function createPricesRouter(prisma: PrismaClient) {
         const result = await prisma.$transaction(async (tx) => {
             // Deactivate current for all fuel types
             await tx.price.updateMany({
-                where: { fuelTypeId: { in: fuelTypes.map(ft => ft.id) }, active: true },
-                data: { active: false }
+                where: { fuelTypeId: { in: fuelTypes.map(ft => ft.id) }, isActive: true },
+                data: { isActive: false }
             });
 
             // Create new prices for all fuel types
@@ -98,7 +98,7 @@ export function createPricesRouter(prisma: PrismaClient) {
                         data: {
                             fuelTypeId: ft.id,
                             perLitre: Number(prices[key]),
-                            active: true,
+                            isActive: true,
                             createdAt
                         }
                     });

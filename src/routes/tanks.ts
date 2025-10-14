@@ -20,7 +20,7 @@ export function createTanksRouter(prisma: PrismaClient) {
         const currentPrices = await Promise.all(
             fuelTypes.map(async (ft) => {
                 const price = await prisma.price.findFirst({
-                    where: { fuelTypeId: ft.id, active: true },
+                    where: { fuelTypeId: ft.id, isActive: true },
                     orderBy: { createdAt: 'desc' }
                 });
                 return {

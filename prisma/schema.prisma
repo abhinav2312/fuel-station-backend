@@ -246,6 +246,7 @@ model Purchase {
   supplier  String?
   invoiceNo String?
   note      String?
+  status    String   @default("pending") // pending, unloaded
   
   // Relations
   tankId    Int
