@@ -361,16 +361,29 @@ app.get('/api/reports/summary', async (req, res) => {
         const totalOnlineReceived = onlinePayments.reduce((sum, payment) => sum + Number(payment.amount), 0);
         const totalCredits = credits.reduce((sum, credit) => sum + Number(credit.totalAmount), 0);
 
-        // Group by fuel type
-        const fuelTypeStats: Record<string, { litres: number; revenue: number }> = {};
-        sales.forEach(sale => {
-            const fuelTypeName = sale.pump.fuelType.name.toLowerCase().replace(/\s+/g, '');
-            if (!fuelTypeStats[fuelTypeName]) {
-                fuelTypeStats[fuelTypeName] = { litres: 0, revenue: 0 };
-            }
-            fuelTypeStats[fuelTypeName].litres += Number(sale.litres);
-            fuelTypeStats[fuelTypeName].revenue += Number(sale.totalAmount);
+        // Get all fuel types from database
+        const fuelTypes = await prisma.fuelType.findMany({
+            orderBy: { id: 'asc' }
         });
+
+        // Group by fuel type
+        const fuelTypeStats: Record<number, { litres: number; revenue: number }> = {};
+        sales.forEach(sale => {
+            const fuelTypeId = sale.pump.fuelType.id;
+            if (!fuelTypeStats[fuelTypeId]) {
+                fuelTypeStats[fuelTypeId] = { litres: 0, revenue: 0 };
+            }
+            fuelTypeStats[fuelTypeId].litres += Number(sale.litres);
+            fuelTypeStats[fuelTypeId].revenue += Number(sale.totalAmount);
+        });
+
+        // Create fuel types array with stats
+        const fuelTypesWithStats = fuelTypes.map(fuelType => ({
+            id: fuelType.id,
+            name: fuelType.name,
+            litres: fuelTypeStats[fuelType.id]?.litres || 0,
+            revenue: fuelTypeStats[fuelType.id]?.revenue || 0
+        }));
 
         const summary = {
             period: period as string,
@@ -378,17 +391,10 @@ app.get('/api/reports/summary', async (req, res) => {
             end: endDate.toISOString().split('T')[0],
             totals: {
                 litres: totalLitres,
-                petrolLitres: fuelTypeStats.petrol?.litres || 0,
-                dieselLitres: fuelTypeStats.diesel?.litres || 0,
-                premiumPetrolLitres: fuelTypeStats.premiumpetrol?.litres || 0,
                 revenue: totalRevenue,
                 profit: totalRevenue * 0.12 // Assuming 12% profit margin
             },
-            revenues: {
-                petrolRevenue: fuelTypeStats.petrol?.revenue || 0,
-                dieselRevenue: fuelTypeStats.diesel?.revenue || 0,
-                premiumPetrolRevenue: fuelTypeStats.premiumpetrol?.revenue || 0
-            },
+            fuelTypes: fuelTypesWithStats,
             financials: {
                 totalRevenue: totalRevenue,
                 creditToCollect: totalCredits,
