@@ -141,6 +141,10 @@ async function main() {
     console.log('🚀 Your fuel station is ready for business!');
 }
 
+// Export the main function for Prisma
+export { main };
+
+// Run the seed function
 main()
     .catch((e) => {
         console.error('❌ Seed failed:', e);
