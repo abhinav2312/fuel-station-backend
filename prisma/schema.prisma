@@ -25,7 +25,7 @@ model FuelType {
   sales        Sale[]
   
   createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  updatedAt    DateTime       @default(now()) @updatedAt
 }
 
 model Tank {
@@ -42,7 +42,7 @@ model Tank {
   purchases    Purchase[]
   
   createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  updatedAt    DateTime       @default(now()) @updatedAt
 }
 
 model Pump {
@@ -58,7 +58,7 @@ model Pump {
   cashReceipts CashReceipt[]
   
   createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  updatedAt    DateTime       @default(now()) @updatedAt
 }
 
 // ===========================================
