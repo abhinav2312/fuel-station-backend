@@ -719,6 +719,43 @@ app.put('/api/clients/:id', async (req, res) => {
     }
 });
 
+// DELETE client endpoint
+app.delete('/api/clients/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        console.log('Deleting client:', id);
+
+        // Check if client has any related records (credits, sales, etc.)
+        const clientCredits = await prisma.clientCredit.count({
+            where: { clientId: parseInt(id) }
+        });
+
+        const clientSales = await prisma.sale.count({
+            where: { clientId: parseInt(id) }
+        });
+
+        if (clientCredits > 0 || clientSales > 0) {
+            return res.status(400).json({
+                error: 'Cannot delete client with existing credits or sales. Please clear all related records first.'
+            });
+        }
+
+        // Delete client from database
+        await prisma.client.delete({
+            where: { id: parseInt(id) }
+        });
+
+        res.json({ message: 'Client deleted successfully' });
+    } catch (error: any) {
+        console.error('Error deleting client:', error);
+        if (error.code === 'P2025') {
+            res.status(404).json({ error: 'Client not found' });
+        } else {
+            res.status(500).json({ error: error.message });
+        }
+    }
+});
+
 app.post('/api/credits', async (req, res) => {
     try {
         const { clientId, fuelTypeId, litres, pricePerLitre, totalAmount, date, note } = req.body;
