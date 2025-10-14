@@ -460,10 +460,61 @@ app.get('/api/reports/summary', async (req, res) => {
         const totalOnlineReceived = onlinePayments.reduce((sum, payment) => sum + Number(payment.amount), 0);
         const totalCredits = credits.reduce((sum, credit) => sum + Number(credit.totalAmount), 0);
 
-        // Get all fuel types from database
+        // Get all fuel types from database first
         const fuelTypes = await prisma.fuelType.findMany({
             orderBy: { id: 'asc' }
         });
+
+        // Get current prices for profit calculations
+        const currentPrices = await prisma.price.findMany({
+            where: { active: true },
+            include: { fuelType: true }
+        });
+
+        // Calculate detailed profit analysis
+        let totalCostPrice = 0;
+        let totalSellingPrice = 0;
+        const fuelTypeProfits: Record<number, {
+            name: string;
+            litres: number;
+            costPrice: number;
+            sellingPrice: number;
+            profit: number;
+            margin: number
+        }> = {};
+
+        // Calculate profit for each fuel type
+        fuelTypes.forEach(fuelType => {
+            const fuelTypeSales = sales.filter(sale => sale.pump.fuelType.id === fuelType.id);
+            const totalLitresForType = fuelTypeSales.reduce((sum, sale) => sum + Number(sale.litres), 0);
+            const totalRevenueForType = fuelTypeSales.reduce((sum, sale) => sum + Number(sale.totalAmount), 0);
+
+            // Get current price for this fuel type
+            const currentPrice = currentPrices.find(p => p.fuelTypeId === fuelType.id);
+            const sellingPricePerLitre = currentPrice ? Number(currentPrice.perLitre) : 0;
+
+            // Estimate cost price (typically 85-90% of selling price for fuel stations)
+            const costPricePerLitre = sellingPricePerLitre * 0.88; // 12% margin assumption
+
+            const costPrice = totalLitresForType * costPricePerLitre;
+            const profit = totalRevenueForType - costPrice;
+            const margin = totalRevenueForType > 0 ? (profit / totalRevenueForType) * 100 : 0;
+
+            fuelTypeProfits[fuelType.id] = {
+                name: fuelType.name,
+                litres: totalLitresForType,
+                costPrice,
+                sellingPrice: totalRevenueForType,
+                profit,
+                margin
+            };
+
+            totalCostPrice += costPrice;
+            totalSellingPrice += totalRevenueForType;
+        });
+
+        const totalProfit = totalSellingPrice - totalCostPrice;
+        const overallMargin = totalSellingPrice > 0 ? (totalProfit / totalSellingPrice) * 100 : 0;
 
         // Group by fuel type
         const fuelTypeStats: Record<number, { litres: number; revenue: number }> = {};
@@ -491,9 +542,12 @@ app.get('/api/reports/summary', async (req, res) => {
             totals: {
                 litres: totalLitres,
                 revenue: totalRevenue,
-                profit: totalRevenue * 0.12 // Assuming 12% profit margin
+                profit: totalProfit,
+                costPrice: totalCostPrice,
+                margin: overallMargin
             },
             fuelTypes: fuelTypesWithStats,
+            fuelTypeProfits: Object.values(fuelTypeProfits),
             financials: {
                 totalRevenue: totalRevenue,
                 creditToCollect: totalCredits,
@@ -507,7 +561,7 @@ app.get('/api/reports/summary', async (req, res) => {
             clients: await prisma.client.count(),
             sales: sales.length,
             todaySales: totalRevenue,
-            todayProfit: totalRevenue * 0.12,
+            todayProfit: totalProfit,
             totalCredits: totalCredits,
             unpaidCredits: await prisma.clientCredit.count({ where: { status: 'unpaid' } })
         };
@@ -1003,17 +1057,57 @@ app.get('/api/validation', async (req, res) => {
         const endDate = new Date(targetDate);
         endDate.setHours(23, 59, 59, 999);
 
-        // Get sales for the day
-        const sales = await prisma.sale.findMany({
+        // Get pump readings for the day (this gives us the actual fuel sold)
+        const readings = await prisma.dailyReading.findMany({
             where: {
-                createdAt: {
+                date: {
                     gte: startDate,
                     lte: endDate
+                }
+            },
+            include: {
+                pump: {
+                    include: {
+                        fuelType: true
+                    }
                 }
             }
         });
 
-        // Get cash receipts for the day
+        // Get current prices to calculate gross sales from readings
+        const prices = await prisma.price.findMany({
+            where: {
+                active: true
+            },
+            include: {
+                fuelType: true
+            }
+        });
+
+        // Calculate gross sales from readings (actual fuel sold * current prices)
+        let grossSales = 0;
+        console.log(`Validation for ${targetDate.toISOString().split('T')[0]}: Found ${readings.length} readings`);
+
+        readings.forEach(reading => {
+            // Fuel sold = Opening - Closing (fuel that went out of the tank)
+            const fuelSold = Number(reading.openingLitres) - Number(reading.closingLitres);
+            const currentPrice = prices.find(p => p.fuelTypeId === reading.pump.fuelTypeId);
+
+            console.log(`Pump ${reading.pumpId}: Opening=${reading.openingLitres}L, Closing=${reading.closingLitres}L, Sold=${fuelSold}L at ₹${currentPrice?.perLitre || 0}/L`);
+
+            // Only count positive fuel sales (fuel sold, not fuel added)
+            if (currentPrice && fuelSold > 0) {
+                const saleAmount = fuelSold * Number(currentPrice.perLitre);
+                grossSales += saleAmount;
+                console.log(`Added ₹${saleAmount.toFixed(2)} to gross sales`);
+            } else if (fuelSold < 0) {
+                console.log(`Pump ${reading.pumpId}: Fuel was added (${Math.abs(fuelSold)}L), not sold`);
+            }
+        });
+
+        console.log(`Total gross sales from readings: ₹${grossSales.toFixed(2)}`);
+
+        // Get cash receipts (money collected by workers)
         const cashReceipts = await prisma.cashReceipt.findMany({
             where: {
                 date: {
@@ -1023,7 +1117,7 @@ app.get('/api/validation', async (req, res) => {
             }
         });
 
-        // Get online payments for the day
+        // Get online payments (UPI, etc.)
         const onlinePayments = await prisma.onlinePayment.findMany({
             where: {
                 date: {
@@ -1033,7 +1127,7 @@ app.get('/api/validation', async (req, res) => {
             }
         });
 
-        // Get credit sales for the day
+        // Get credit sales (sales on credit - money to be received later)
         const creditSales = await prisma.clientCredit.findMany({
             where: {
                 date: {
@@ -1043,14 +1137,43 @@ app.get('/api/validation', async (req, res) => {
             }
         });
 
+        // Get credit payments (credits paid today - money received from previous credit sales)
+        // Only count payments made by workers or UPI, not owner payments (since owner has that money)
+        const creditPayments = await prisma.clientCredit.findMany({
+            where: {
+                paidDate: {
+                    gte: startDate,
+                    lte: endDate
+                },
+                status: 'paid',
+                paymentMethod: {
+                    in: ['Worker', 'UPI'] // Only count worker and UPI payments, exclude 'Owner'
+                }
+            }
+        });
+
         // Calculate totals
-        const grossSales = sales.reduce((sum, sale) => sum + Number(sale.totalAmount), 0);
         const totalCashReceipts = cashReceipts.reduce((sum, receipt) => sum + Number(receipt.amount), 0);
         const totalOnlinePayments = onlinePayments.reduce((sum, payment) => sum + Number(payment.amount), 0);
         const totalCreditSales = creditSales.reduce((sum, credit) => sum + Number(credit.totalAmount), 0);
-        const totalReceived = totalCashReceipts + totalOnlinePayments;
-        const difference = grossSales - totalReceived;
+        const totalCreditPayments = creditPayments.reduce((sum, credit) => sum + Number(credit.totalAmount), 0);
+
+        console.log(`Money received breakdown:`);
+        console.log(`- Cash receipts: ₹${totalCashReceipts.toFixed(2)} (${cashReceipts.length} receipts)`);
+        console.log(`- Online payments: ₹${totalOnlinePayments.toFixed(2)} (${onlinePayments.length} payments)`);
+        console.log(`- Credit payments (Worker/UPI only): ₹${totalCreditPayments.toFixed(2)} (${creditPayments.length} payments)`);
+        console.log(`- Credit sales: ₹${totalCreditSales.toFixed(2)} (${creditSales.length} credits)`);
+
+        // Total money received = Cash + Online + Credit Payments
+        const totalReceived = totalCashReceipts + totalOnlinePayments + totalCreditPayments;
+
+        // The validation: Gross Sales should equal Total Received + Credit Sales
+        // (Credit Sales are money to be received later)
+        const expectedTotal = totalReceived + totalCreditSales;
+        const difference = grossSales - expectedTotal;
         const isBalanced = Math.abs(difference) < 0.01; // Allow for small rounding differences
+
+        console.log(`Validation result: Gross Sales (₹${grossSales.toFixed(2)}) vs Expected (₹${expectedTotal.toFixed(2)}) = Difference: ₹${difference.toFixed(2)}`);
 
         const validationData = {
             date: targetDate.toISOString().split('T')[0],
@@ -1058,7 +1181,9 @@ app.get('/api/validation', async (req, res) => {
             cashReceipts: totalCashReceipts,
             onlinePayments: totalOnlinePayments,
             creditSales: totalCreditSales,
+            creditPayments: totalCreditPayments,
             totalReceived,
+            expectedTotal,
             difference,
             isBalanced
         };
