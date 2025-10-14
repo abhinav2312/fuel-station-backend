@@ -283,6 +283,105 @@ app.get('/api/online-payments', async (req, res) => {
     }
 });
 
+// GET trends endpoint for dashboard charts
+app.get('/api/reports/trends', async (req, res) => {
+    try {
+        const { period = 'today' } = req.query;
+        const endDate = new Date();
+        const startDate = new Date();
+
+        // Calculate date range based on period
+        switch (period) {
+            case 'today':
+                startDate.setHours(0, 0, 0, 0);
+                endDate.setHours(23, 59, 59, 999);
+                break;
+            case 'week':
+                startDate.setDate(startDate.getDate() - 7);
+                break;
+            case 'month':
+                startDate.setMonth(startDate.getMonth() - 1);
+                break;
+            case 'year':
+                startDate.setFullYear(startDate.getFullYear() - 1);
+                break;
+            default:
+                startDate.setDate(startDate.getDate() - 7);
+        }
+
+        // Get sales data for the trend period
+        const sales = await prisma.sale.findMany({
+            where: {
+                createdAt: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            },
+            include: {
+                pump: {
+                    include: {
+                        fuelType: true
+                    }
+                }
+            },
+            orderBy: {
+                createdAt: 'asc'
+            }
+        });
+
+        // Group sales by appropriate time period
+        const groupedSales: Record<string, { sales: number; profit: number }> = {};
+
+        sales.forEach(sale => {
+            let groupKey: string;
+
+            switch (period) {
+                case 'today':
+                    // Group by hour for today
+                    groupKey = sale.createdAt.toISOString().split('T')[1].split(':')[0] + ':00';
+                    break;
+                case 'week':
+                    // Group by day for week
+                    groupKey = sale.createdAt.toISOString().split('T')[0];
+                    break;
+                case 'month':
+                    // Group by week for month
+                    const weekStart = new Date(sale.createdAt);
+                    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
+                    groupKey = weekStart.toISOString().split('T')[0];
+                    break;
+                case 'year':
+                    // Group by month for year
+                    groupKey = sale.createdAt.toISOString().substring(0, 7); // YYYY-MM
+                    break;
+                default:
+                    groupKey = sale.createdAt.toISOString().split('T')[0];
+            }
+
+            if (!groupedSales[groupKey]) {
+                groupedSales[groupKey] = { sales: 0, profit: 0 };
+            }
+            groupedSales[groupKey].sales += Number(sale.totalAmount);
+            // Calculate profit (assuming 12% margin)
+            groupedSales[groupKey].profit += Number(sale.totalAmount) * 0.12;
+        });
+
+        // Convert to array format for charts
+        const trendData = Object.entries(groupedSales)
+            .map(([date, data]) => ({
+                date,
+                sales: Math.round(data.sales),
+                profit: Math.round(data.profit)
+            }))
+            .sort((a, b) => a.date.localeCompare(b.date));
+
+        res.json(trendData);
+    } catch (error: any) {
+        console.error('Error fetching trends:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
 app.get('/api/reports/summary', async (req, res) => {
     try {
         const { period = 'daily', date } = req.query;
@@ -781,6 +880,40 @@ app.post('/api/credits', async (req, res) => {
         res.status(201).json(newCredit);
     } catch (error: any) {
         console.error('Error creating credit:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Mark credit as paid with payment method
+app.put('/api/credits/:id/mark-paid', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { paymentMethod } = req.body;
+        console.log('Marking credit as paid:', id, 'Payment method:', paymentMethod);
+
+        // Validate payment method
+        const validMethods = ['UPI', 'Worker', 'Owner'];
+        if (!paymentMethod || !validMethods.includes(paymentMethod)) {
+            return res.status(400).json({ error: 'Payment method is required. Valid options: UPI, Worker, Owner' });
+        }
+
+        // Update credit status to paid with payment method
+        const updatedCredit = await prisma.clientCredit.update({
+            where: { id: parseInt(id) },
+            data: {
+                status: 'paid',
+                paidDate: new Date(),
+                paymentMethod: paymentMethod
+            },
+            include: {
+                client: true,
+                fuelType: true
+            }
+        });
+
+        res.json(updatedCredit);
+    } catch (error: any) {
+        console.error('Error marking credit as paid:', error);
         res.status(500).json({ error: error.message });
     }
 });

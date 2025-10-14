@@ -139,6 +139,7 @@ model ClientCredit {
   note          String?
   status        String   @default("unpaid")
   paidDate      DateTime?
+  paymentMethod String?  // UPI, Worker, Owner
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 }
