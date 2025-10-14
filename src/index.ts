@@ -407,10 +407,10 @@ app.get('/api/reports/summary', async (req, res) => {
             endDate.setHours(23, 59, 59, 999);
         }
 
-        // Get sales data for the period
-        const sales = await prisma.sale.findMany({
+        // Get sales data from daily readings (actual fuel sold)
+        const readings = await prisma.dailyReading.findMany({
             where: {
-                createdAt: {
+                date: {
                     gte: startDate,
                     lte: endDate
                 }
@@ -423,6 +423,15 @@ app.get('/api/reports/summary', async (req, res) => {
                 }
             }
         });
+
+        // Convert readings to sales format for compatibility
+        const sales = readings.map(reading => ({
+            id: reading.id,
+            litres: Number(reading.openingLitres) - Number(reading.closingLitres),
+            totalAmount: Number(reading.revenue),
+            createdAt: reading.date,
+            pump: reading.pump
+        })).filter(sale => sale.litres > 0); // Only include positive fuel sales
 
         // Get cash receipts and online payments for the period
         const cashReceipts = await prisma.cashReceipt.findMany({
@@ -1219,8 +1228,13 @@ app.get('/api/readings', async (_req, res) => {
 
 app.post('/api/readings', async (req, res) => {
     try {
-        const { pumpId, date, openingLitres, closingLitres, pricePerLitre, revenue } = req.body;
-        console.log('Saving reading:', { pumpId, date, openingLitres, closingLitres, pricePerLitre, revenue });
+        const { pumpId, date, openingLitres, closingLitres, pricePerLitre } = req.body;
+
+        // Calculate revenue automatically: fuel sold × price per litre
+        const fuelSold = parseFloat(openingLitres) - parseFloat(closingLitres);
+        const calculatedRevenue = fuelSold > 0 ? fuelSold * parseFloat(pricePerLitre) : 0;
+
+        console.log('Saving reading:', { pumpId, date, openingLitres, closingLitres, pricePerLitre, fuelSold, calculatedRevenue });
 
         // Create or update daily reading
         const reading = await prisma.dailyReading.upsert({
@@ -1234,7 +1248,7 @@ app.post('/api/readings', async (req, res) => {
                 openingLitres: parseFloat(openingLitres),
                 closingLitres: parseFloat(closingLitres),
                 pricePerLitre: parseFloat(pricePerLitre),
-                revenue: parseFloat(revenue || 0)
+                revenue: calculatedRevenue
             },
             create: {
                 pumpId: parseInt(pumpId),
@@ -1242,7 +1256,7 @@ app.post('/api/readings', async (req, res) => {
                 openingLitres: parseFloat(openingLitres),
                 closingLitres: parseFloat(closingLitres),
                 pricePerLitre: parseFloat(pricePerLitre),
-                revenue: parseFloat(revenue || 0)
+                revenue: calculatedRevenue
             },
             include: {
                 pump: {
