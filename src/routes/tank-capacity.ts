@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
 import { backendLogger } from '../utils/logger';
 
+const prisma = new PrismaClient();
 const router = Router();
 
 // Update tank capacities safely
@@ -46,7 +47,7 @@ router.post('/update-capacity', async (req, res) => {
             }
 
             // Calculate new percentage
-            const newPercentage = Math.min((currentTank.currentLevel / newCapacity) * 100, 100);
+            const newPercentage = Math.min((Number(currentTank.currentLevel) / newCapacity) * 100, 100);
 
             // Create audit log before update
             await prisma.auditLog.create({
@@ -57,7 +58,7 @@ router.post('/update-capacity', async (req, res) => {
                     oldValues: JSON.stringify({
                         capacity: currentTank.capacityLit,
                         level: currentTank.currentLevel,
-                        percentage: (currentTank.currentLevel / currentTank.capacityLit) * 100
+                        percentage: (Number(currentTank.currentLevel) / Number(currentTank.capacityLit)) * 100
                     }),
                     newValues: JSON.stringify({
                         capacity: newCapacity,
@@ -94,7 +95,7 @@ router.post('/update-capacity', async (req, res) => {
                 oldCapacity: currentTank.capacityLit,
                 newCapacity: updatedTank.capacityLit,
                 currentLevel: updatedTank.currentLevel,
-                oldPercentage: (currentTank.currentLevel / currentTank.capacityLit) * 100,
+                oldPercentage: (Number(currentTank.currentLevel) / Number(currentTank.capacityLit)) * 100,
                 newPercentage,
                 reason
             });
@@ -162,7 +163,7 @@ router.get('/stats', async (req, res) => {
         });
 
         const stats = tanks.map(tank => {
-            const percentage = (tank.currentLevel / tank.capacityLit) * 100;
+            const percentage = (Number(tank.currentLevel) / Number(tank.capacityLit)) * 100;
             return {
                 id: tank.id,
                 name: tank.name,
@@ -170,13 +171,13 @@ router.get('/stats', async (req, res) => {
                 currentLevel: tank.currentLevel,
                 capacity: tank.capacityLit,
                 percentage: Math.round(percentage * 100) / 100,
-                availableCapacity: tank.capacityLit - tank.currentLevel,
+                availableCapacity: Number(tank.capacityLit) - Number(tank.currentLevel),
                 status: percentage > 90 ? 'high' : percentage > 70 ? 'medium' : 'low'
             };
         });
 
-        const totalCapacity = tanks.reduce((sum, tank) => sum + tank.capacityLit, 0);
-        const totalCurrentLevel = tanks.reduce((sum, tank) => sum + tank.currentLevel, 0);
+        const totalCapacity = tanks.reduce((sum, tank) => sum + Number(tank.capacityLit), 0);
+        const totalCurrentLevel = tanks.reduce((sum, tank) => sum + Number(tank.currentLevel), 0);
         const overallPercentage = (totalCurrentLevel / totalCapacity) * 100;
 
         res.json({

@@ -43,7 +43,7 @@ export function createValidationRouter(prisma: PrismaClient) {
                 prisma.sale.aggregate({
                     _sum: { totalAmount: true },
                     where: {
-                        method: 'CREDIT',
+                        paymentMethod: 'CREDIT',
                         createdAt: { gte: start, lte: end }
                     },
                 }),

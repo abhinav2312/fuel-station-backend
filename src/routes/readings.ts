@@ -27,7 +27,7 @@ export function createReadingsRouter(prisma: PrismaClient) {
             // auto-fill from current active price for the pump's fuel type
             const pump = await prisma.pump.findUnique({ where: { id: Number(pumpId) } });
             if (!pump) return res.status(404).json({ message: 'Pump not found' });
-            const active = await prisma.price.findFirst({ where: { fuelTypeId: pump.fuelTypeId, active: true }, orderBy: { createdAt: 'desc' } });
+            const active = await prisma.price.findFirst({ where: { fuelTypeId: pump.fuelTypeId, isActive: true }, orderBy: { createdAt: 'desc' } });
             price = Number(active?.perLitre ?? 0);
         }
         const result = await prisma.dailyReading.upsert({

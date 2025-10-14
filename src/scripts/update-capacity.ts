@@ -39,13 +39,13 @@ async function updateTankCapacity(updates: CapacityUpdate[]) {
             console.log(`   New Capacity: ${update.newCapacity}L`);
 
             // 2. Validate the update
-            if (update.newCapacity < currentTank.currentLevel) {
+            if (update.newCapacity < Number(currentTank.currentLevel)) {
                 console.log(`⚠️  WARNING: New capacity (${update.newCapacity}L) is less than current level (${currentTank.currentLevel}L)`);
                 console.log(`   This will result in 100% tank level. Consider this carefully.`);
             }
 
             // 3. Calculate new percentage
-            const newPercentage = Math.min((currentTank.currentLevel / update.newCapacity) * 100, 100);
+            const newPercentage = Math.min((Number(currentTank.currentLevel) / update.newCapacity) * 100, 100);
 
             console.log(`   New Level Percentage: ${newPercentage.toFixed(2)}%`);
 
@@ -55,7 +55,7 @@ async function updateTankCapacity(updates: CapacityUpdate[]) {
                 oldCapacity: currentTank.capacityLit,
                 newCapacity: update.newCapacity,
                 currentLevel: currentTank.currentLevel,
-                oldPercentage: (currentTank.currentLevel / currentTank.capacityLit) * 100,
+                oldPercentage: (Number(currentTank.currentLevel) / Number(currentTank.capacityLit)) * 100,
                 newPercentage: newPercentage,
                 reason: update.reason || 'Capacity update',
                 updatedAt: new Date()
@@ -86,7 +86,7 @@ async function updateTankCapacity(updates: CapacityUpdate[]) {
                         oldValues: JSON.stringify({
                             capacity: currentTank.capacityLit,
                             level: currentTank.currentLevel,
-                            percentage: (currentTank.currentLevel / currentTank.capacityLit) * 100
+                            percentage: (Number(currentTank.currentLevel) / Number(currentTank.capacityLit)) * 100
                         }),
                         newValues: JSON.stringify({
                             capacity: update.newCapacity,
@@ -111,7 +111,7 @@ async function updateTankCapacity(updates: CapacityUpdate[]) {
         });
 
         for (const tank of allTanks) {
-            const percentage = (tank.currentLevel / tank.capacityLit) * 100;
+            const percentage = (Number(tank.currentLevel) / Number(tank.capacityLit)) * 100;
             console.log(`   ${tank.name}: ${tank.currentLevel}L / ${tank.capacityLit}L (${percentage.toFixed(1)}%)`);
         }
 
@@ -161,7 +161,7 @@ async function interactiveCapacityUpdate() {
 
     console.log('Current tank status:');
     tanks.forEach((tank, index) => {
-        const percentage = (tank.currentLevel / tank.capacityLit) * 100;
+        const percentage = (Number(tank.currentLevel) / Number(tank.capacityLit)) * 100;
         console.log(`${index + 1}. ${tank.name} (${tank.fuelType.name})`);
         console.log(`   Current: ${tank.currentLevel}L / ${tank.capacityLit}L (${percentage.toFixed(1)}%)`);
     });
@@ -176,7 +176,7 @@ async function interactiveCapacityUpdate() {
 }
 
 // Main execution
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (require.main === module) {
     const command = process.argv[2];
 
     switch (command) {

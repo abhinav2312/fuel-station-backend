@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
+import { backendLogger, log } from './utils/logger';
 
 // DATABASE_URL is automatically provided by Render when you connect a PostgreSQL database
 // No need to set a fallback - Render will provide the correct connection string
@@ -38,6 +39,25 @@ app.use(cors({
 
 app.use(express.json());
 
+// Logging middleware
+app.use((req, res, next) => {
+    const startTime = log.startTimer();
+    const originalSend = res.send;
+
+    res.send = function (data) {
+        const duration = log.endTimer(startTime);
+        log.api(req.method, req.path, startTime, res.statusCode, {
+            endpoint: req.path,
+            method: req.method,
+            ip: req.ip,
+            userAgent: req.get('User-Agent')
+        });
+        return originalSend.call(this, data);
+    };
+
+    next();
+});
+
 const PORT = process.env.PORT ? Number(process.env.PORT) : 4000;
 
 app.get('/health', (_req, res) => {
@@ -46,11 +66,42 @@ app.get('/health', (_req, res) => {
 
 // Production status endpoint
 app.get('/api/status', async (_req, res) => {
+    const startTime = log.startTimer();
     try {
         await prisma.$connect();
-        res.json({ status: 'ok', database: 'connected' });
+        const duration = log.endTimer(startTime);
+
+        backendLogger.info('Health check successful', {
+            database: 'connected',
+            duration
+        }, {
+            endpoint: '/api/status',
+            method: 'GET'
+        });
+
+        res.json({
+            status: 'ok',
+            database: 'connected',
+            timestamp: new Date().toISOString()
+        });
     } catch (error) {
-        res.status(500).json({ status: 'error', database: 'disconnected' });
+        const duration = log.endTimer(startTime);
+
+        backendLogger.error('Health check failed', {
+            database: 'disconnected',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            duration
+        }, {
+            endpoint: '/api/status',
+            method: 'GET'
+        });
+
+        res.status(500).json({
+            status: 'error',
+            database: 'disconnected',
+            error: error instanceof Error ? error.message : 'Unknown error',
+            timestamp: new Date().toISOString()
+        });
     }
 });
 
@@ -1468,11 +1519,34 @@ app.post('/api/purchase-prices', async (req, res) => {
         const { prices } = req.body;
         console.log('Saving purchase prices:', prices);
 
-        // Store purchase prices in a simple JSON file or use a different approach
-        // For now, we'll just return success without creating purchase records
-        // The frontend will handle storing these temporarily
+        // Create a new purchase record for each tank with the updated price
+        // This will serve as the "current purchase price" for each tank
+        const results = [];
 
-        res.json({ success: true, message: 'Purchase prices saved successfully' });
+        for (const [tankId, price] of Object.entries(prices)) {
+            const priceValue = Number(price);
+            if (priceValue > 0) {
+                // Create a "price update" purchase record
+                const purchase = await prisma.purchase.create({
+                    data: {
+                        tankId: parseInt(tankId),
+                        litres: 0, // No actual fuel purchased, just price update
+                        unitCost: priceValue,
+                        totalCost: 0, // No cost since no fuel
+                        note: 'Purchase price update',
+                        status: 'pending',
+                        date: new Date()
+                    }
+                });
+                results.push({ tankId: parseInt(tankId), price: priceValue, purchaseId: purchase.id });
+            }
+        }
+
+        res.json({
+            success: true,
+            message: 'Purchase prices saved successfully',
+            results
+        });
     } catch (error: any) {
         console.error('Error saving purchase prices:', error);
         res.status(500).json({ error: error.message });
@@ -1482,7 +1556,7 @@ app.post('/api/purchase-prices', async (req, res) => {
 app.get('/api/receipts', async (_req, res) => {
     try {
         // Get daily receipts from the database
-        const receipts = await prisma.dailyReceipt.findMany({
+        const receipts = await prisma.cashReceipt.findMany({
             orderBy: {
                 date: 'desc'
             }
@@ -1495,40 +1569,161 @@ app.get('/api/receipts', async (_req, res) => {
     }
 });
 
-// Temporarily comment out complex routes to debug
+// Import only the routes that are actually used by the frontend
 import { createTanksRouter } from './routes/tanks';
-// import { createPumpsRouter } from './routes/pumps';
-// import { createClientsRouter } from './routes/clients';
-// import { createSalesRouter } from './routes/sales';
-// import { createPricesRouter } from './routes/prices';
+import { createPumpsRouter } from './routes/pumps';
+import { createPricesRouter } from './routes/prices';
 import { createPurchasesRouter } from './routes/purchases';
-// import { createReportsRouter } from './routes/reports';
-// import { createReadingsRouter } from './routes/readings';
-// import { createReceiptsRouter } from './routes/receipts';
-// import { createCreditsRouter } from './routes/credits';
-// import { createPurchasePricesRouter } from './routes/purchase-prices';
-// import { createCashReceiptsRouter } from './routes/cash-receipts';
-// import { createOnlinePaymentsRouter } from './routes/online-payments';
-// import { createValidationRouter } from './routes/validation';
+import { createReportsRouter } from './routes/reports';
+import { createReadingsRouter } from './routes/readings';
+import { createCashReceiptsRouter } from './routes/cash-receipts';
+import { createOnlinePaymentsRouter } from './routes/online-payments';
+import { createValidationRouter } from './routes/validation';
 import { createSeedRouter } from './routes/seed';
-// import logsRouter from './routes/logs';
+import logsRouter from './routes/logs';
 
+// Register the routes
 app.use('/api/tanks', createTanksRouter(prisma));
-// app.use('/api/pumps', createPumpsRouter(prisma));
-// app.use('/api/clients', createClientsRouter(prisma));
-// app.use('/api/sales', createSalesRouter(prisma));
-// app.use('/api/prices', createPricesRouter(prisma));
+app.use('/api/pumps', createPumpsRouter(prisma));
+app.use('/api/prices', createPricesRouter(prisma));
 app.use('/api/purchases', createPurchasesRouter(prisma));
-// app.use('/api/reports', createReportsRouter(prisma));
-// app.use('/api/readings', createReadingsRouter(prisma));
-// app.use('/api/receipts', createReceiptsRouter(prisma));
-// app.use('/api/credits', createCreditsRouter(prisma));
-// app.use('/api/purchase-prices', createPurchasePricesRouter(prisma));
-// app.use('/api/cash-receipts', createCashReceiptsRouter(prisma));
-// app.use('/api/online-payments', createOnlinePaymentsRouter(prisma));
-// app.use('/api/validation', createValidationRouter(prisma));
+app.use('/api/reports', createReportsRouter(prisma));
+app.use('/api/readings', createReadingsRouter(prisma));
+app.use('/api/cash-receipts', createCashReceiptsRouter(prisma));
+app.use('/api/online-payments', createOnlinePaymentsRouter(prisma));
+app.use('/api/validation', createValidationRouter(prisma));
 app.use('/api/seed', createSeedRouter(prisma));
-// app.use('/api/logs', logsRouter);
+app.use('/api/logs', logsRouter);
+
+// Add missing API endpoints that the frontend uses
+// Clients API (since we deleted the clients route file)
+app.get('/api/clients', async (_req, res) => {
+    try {
+        const clients = await prisma.client.findMany({
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(clients);
+    } catch (error: any) {
+        console.error('Error fetching clients:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/clients', async (req, res) => {
+    try {
+        const { name, ownerName, phone, address } = req.body;
+        const client = await prisma.client.create({
+            data: { name, ownerName, phone, address: address || null }
+        });
+        res.status(201).json(client);
+    } catch (error: any) {
+        console.error('Error creating client:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.put('/api/clients/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { name, ownerName, phone, address } = req.body;
+        const client = await prisma.client.update({
+            where: { id: parseInt(id) },
+            data: { name, ownerName, phone, address: address || null }
+        });
+        res.json(client);
+    } catch (error: any) {
+        console.error('Error updating client:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.delete('/api/clients/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        await prisma.client.delete({ where: { id: parseInt(id) } });
+        res.json({ message: 'Client deleted successfully' });
+    } catch (error: any) {
+        console.error('Error deleting client:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Credits API (since we deleted the credits route file)
+app.get('/api/credits', async (req, res) => {
+    try {
+        const { clientId, status } = req.query;
+        const where: any = {};
+        if (clientId) where.clientId = parseInt(clientId as string);
+        if (status) where.status = status;
+
+        const credits = await prisma.clientCredit.findMany({
+            where,
+            include: { client: true, fuelType: true },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(credits);
+    } catch (error: any) {
+        console.error('Error fetching credits:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.post('/api/credits', async (req, res) => {
+    try {
+        const { clientId, fuelTypeId, litres, pricePerLitre, totalAmount, status, paymentMethod, note } = req.body;
+        const credit = await prisma.clientCredit.create({
+            data: {
+                clientId,
+                fuelTypeId,
+                litres,
+                pricePerLitre,
+                totalAmount,
+                status: status || 'unpaid',
+                paymentMethod,
+                note,
+                date: new Date()
+            }
+        });
+        res.status(201).json(credit);
+    } catch (error: any) {
+        console.error('Error creating credit:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+app.put('/api/credits/:id/mark-paid', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { paymentMethod, note } = req.body;
+        const credit = await prisma.clientCredit.update({
+            where: { id: parseInt(id) },
+            data: {
+                status: 'paid',
+                paymentMethod,
+                note,
+                paidDate: new Date()
+            }
+        });
+        res.json(credit);
+    } catch (error: any) {
+        console.error('Error marking credit as paid:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
+
+// Sales API (since we deleted the sales route file)
+app.get('/api/sales', async (req, res) => {
+    try {
+        const sales = await prisma.sale.findMany({
+            include: { client: true, fuelType: true, pump: true },
+            orderBy: { createdAt: 'desc' }
+        });
+        res.json(sales);
+    } catch (error: any) {
+        console.error('Error fetching sales:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Database initialization endpoint
 app.post('/api/init-db', async (_req, res) => {
@@ -1566,6 +1761,14 @@ app.post('/api/init-db', async (_req, res) => {
 });
 
 app.listen(PORT, () => {
+    backendLogger.info('Server started successfully', {
+        port: PORT,
+        environment: process.env.NODE_ENV || 'production',
+        corsOrigins: getCorsOrigins()
+    }, {
+        endpoint: 'server_startup',
+        method: 'INIT'
+    });
     console.log(`Backend listening on http://localhost:${PORT}`);
 });
 

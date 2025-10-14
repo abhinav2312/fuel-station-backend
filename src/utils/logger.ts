@@ -82,6 +82,7 @@ class BackendLogger {
             sessionId?: string;
             ip?: string;
             userAgent?: string;
+            duration?: number;
         }
     ): BackendLogEntry {
         return {
@@ -98,7 +99,7 @@ class BackendLogger {
             userAgent: context?.userAgent,
             data,
             performance: {
-                duration: 0,
+                duration: context?.duration || 0,
                 memoryUsage: process.memoryUsage().heapUsed
             }
         };
@@ -137,6 +138,7 @@ class BackendLogger {
             sessionId?: string;
             ip?: string;
             userAgent?: string;
+            duration?: number;
         }
     ): void {
         const entry = this.createLogEntry(level, category, message, data, context);
@@ -192,7 +194,12 @@ class BackendLogger {
             endpoint,
             status,
             duration
-        }, context);
+        }, {
+            ...context,
+            duration,
+            endpoint,
+            method
+        });
     }
 
     // Database logging
@@ -228,6 +235,27 @@ class BackendLogger {
             severity,
             ...data
         }, context);
+    }
+
+    // Performance tracking utility
+    startTimer(): number {
+        return Date.now();
+    }
+
+    endTimer(startTime: number): number {
+        return Date.now() - startTime;
+    }
+
+    // Performance logging
+    performanceLog(operation: string, duration: number, data?: any, context?: any): void {
+        this.log(LogLevel.INFO, LogCategory.PERFORMANCE, `Performance: ${operation}`, {
+            operation,
+            duration,
+            ...data
+        }, {
+            ...context,
+            duration
+        });
     }
 
     // Get logs
@@ -326,9 +354,13 @@ export const log = {
     api: (method: string, endpoint: string, startTime: number, status?: number, context?: any) =>
         backendLogger.apiRequest(method, endpoint, startTime, status, context),
     database: (query: string, duration: number, rowsAffected?: number, context?: any) =>
-        backendLogger.databaseQuery(query, query, duration, rowsAffected, context),
+        backendLogger.databaseQuery(query, duration, rowsAffected, context),
     auth: (event: string, success: boolean, userId?: string, context?: any) =>
         backendLogger.authEvent(event, success, userId, context),
     security: (event: string, severity: 'low' | 'medium' | 'high' | 'critical', data?: any, context?: any) =>
-        backendLogger.securityEvent(event, severity, data, context)
+        backendLogger.securityEvent(event, severity, data, context),
+    performance: (operation: string, duration: number, data?: any, context?: any) =>
+        backendLogger.performanceLog(operation, duration, data, context),
+    startTimer: () => backendLogger.startTimer(),
+    endTimer: (startTime: number) => backendLogger.endTimer(startTime)
 };

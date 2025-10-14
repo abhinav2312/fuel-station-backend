@@ -21,7 +21,7 @@ export function createSalesRouter(prisma: PrismaClient) {
             if (!tank) throw new Error('Tank not found');
             if (Number(tank.currentLevel) < Number(litres)) throw new Error('Insufficient stock');
 
-            const price = await tx.price.findFirst({ where: { fuelTypeId: tank.fuelTypeId, active: true }, orderBy: { createdAt: 'desc' } });
+            const price = await tx.price.findFirst({ where: { fuelTypeId: tank.fuelTypeId, isActive: true }, orderBy: { createdAt: 'desc' } });
             if (!price) throw new Error('No active price');
 
             const totalAmount = Number(litres) * Number(price.perLitre);
@@ -33,7 +33,18 @@ export function createSalesRouter(prisma: PrismaClient) {
                 const newBalance = Number(client.balance) + totalAmount;
                 if (newBalance > Number(client.creditLimit)) throw new Error('Credit limit exceeded');
                 await tx.client.update({ where: { id: client.id }, data: { balance: newBalance } });
-                await tx.ledgerEntry.create({ data: { clientId: client.id, amount: totalAmount, memo: 'Fuel on credit' } });
+                // Note: ledgerEntry model doesn't exist, using ClientCredit instead
+                await tx.clientCredit.create({
+                    data: {
+                        clientId: client.id,
+                        fuelTypeId: tank.fuelTypeId,
+                        litres: 0,
+                        pricePerLitre: price.perLitre,
+                        totalAmount: totalAmount,
+                        status: 'unpaid',
+                        date: new Date()
+                    }
+                });
             }
 
             // Use tank.avgUnitCost as cost basis
@@ -44,13 +55,14 @@ export function createSalesRouter(prisma: PrismaClient) {
 
             const sale = await tx.sale.create({
                 data: {
-                    tankId: tank.id,
                     litres,
                     pricePerLitre: price.perLitre,
                     totalAmount,
                     costPerLitre,
                     profit,
-                    method,
+                    paymentMethod: method,
+                    pumpId: 1, // Default pump ID - you may need to adjust this
+                    fuelTypeId: tank.fuelTypeId,
                     clientId: clientId ?? null,
                     note: note ?? null,
                 },

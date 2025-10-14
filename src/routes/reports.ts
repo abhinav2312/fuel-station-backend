@@ -39,7 +39,7 @@ export function createReportsRouter(prisma: PrismaClient) {
         // Credit totals from Sales where method == CREDIT (sum by date range)
         const creditAgg = await prisma.sale.aggregate({
             _sum: { totalAmount: true },
-            where: { method: 'CREDIT', createdAt: { gte: start, lte: endOfPeriod(start, period) } },
+            where: { paymentMethod: 'CREDIT', createdAt: { gte: start, lte: endOfPeriod(start, period) } },
         });
         const saleCreditTotal = Number(creditAgg._sum.totalAmount ?? 0);
 
