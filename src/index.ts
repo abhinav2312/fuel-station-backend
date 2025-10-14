@@ -119,12 +119,30 @@ app.get('/api/db-check', async (_req, res) => {
         const tankCount = await prisma.tank.count();
         const pumpCount = await prisma.pump.count();
         const clientCount = await prisma.client.count();
+        const readingCount = await prisma.dailyReading.count();
+        const saleCount = await prisma.sale.count();
+        const priceCount = await prisma.price.count();
+
+        // Get recent data samples
+        const recentReadings = await prisma.dailyReading.findMany({
+            take: 3,
+            orderBy: { date: 'desc' },
+            include: { pump: { include: { fuelType: true } } }
+        });
+
+        const recentSales = await prisma.sale.findMany({
+            take: 3,
+            orderBy: { createdAt: 'desc' }
+        });
 
         console.log('📊 Database stats:', {
             fuelTypes: fuelTypeCount,
             tanks: tankCount,
             pumps: pumpCount,
-            clients: clientCount
+            clients: clientCount,
+            readings: readingCount,
+            sales: saleCount,
+            prices: priceCount
         });
 
         res.json({
@@ -134,7 +152,14 @@ app.get('/api/db-check', async (_req, res) => {
                 fuelTypes: fuelTypeCount,
                 tanks: tankCount,
                 pumps: pumpCount,
-                clients: clientCount
+                clients: clientCount,
+                readings: readingCount,
+                sales: saleCount,
+                prices: priceCount
+            },
+            recentData: {
+                readings: recentReadings,
+                sales: recentSales
             },
             message: fuelTypeCount === 0 ? 'Database is empty - needs seeding' : 'Database has data'
         });
@@ -436,7 +461,8 @@ app.get('/api/reports/trends', async (req, res) => {
                 sales: Math.round(data.sales),
                 profit: Math.round(data.profit)
             }))
-            .sort((a, b) => a.date.localeCompare(b.date));
+            .filter(item => item.sales > 0 || item.profit > 0) // Filter out zero values
+            .sort((a, b) => b.sales - a.sales); // Sort by sales value (highest first)
 
         res.json(trendData);
     } catch (error: any) {
@@ -488,13 +514,19 @@ app.get('/api/reports/summary', async (req, res) => {
         });
 
         // Convert readings to sales format for compatibility
-        const sales = readings.map(reading => ({
-            id: reading.id,
-            litres: Number(reading.openingLitres) - Number(reading.closingLitres),
-            totalAmount: Number(reading.revenue),
-            createdAt: reading.date,
-            pump: reading.pump
-        })).filter(sale => sale.litres > 0); // Only include positive fuel sales
+        const sales = readings.map(reading => {
+            const litres = Number(reading.openingLitres) - Number(reading.closingLitres);
+            const pricePerLitre = Number(reading.pricePerLitre);
+            const calculatedRevenue = litres * pricePerLitre;
+
+            return {
+                id: reading.id,
+                litres: litres,
+                totalAmount: calculatedRevenue, // Use calculated revenue instead of stored revenue
+                createdAt: reading.date,
+                pump: reading.pump
+            };
+        }).filter(sale => sale.litres > 0); // Only include positive fuel sales
 
         // Get cash receipts and online payments for the period
         const cashReceipts = await prisma.cashReceipt.findMany({
@@ -555,18 +587,25 @@ app.get('/api/reports/summary', async (req, res) => {
             margin: number
         }> = {};
 
-        // Calculate profit for each fuel type
-        fuelTypes.forEach(fuelType => {
+        // Calculate profit for each fuel type using actual prices from readings
+        for (const fuelType of fuelTypes) {
             const fuelTypeSales = sales.filter(sale => sale.pump.fuelType.id === fuelType.id);
             const totalLitresForType = fuelTypeSales.reduce((sum, sale) => sum + Number(sale.litres), 0);
             const totalRevenueForType = fuelTypeSales.reduce((sum, sale) => sum + Number(sale.totalAmount), 0);
 
-            // Get current price for this fuel type
-            const currentPrice = currentPrices.find(p => p.fuelTypeId === fuelType.id);
-            const sellingPricePerLitre = currentPrice ? Number(currentPrice.perLitre) : 0;
+            // Calculate average selling price from actual sales data
+            const averageSellingPrice = totalLitresForType > 0 ? totalRevenueForType / totalLitresForType : 0;
 
-            // Estimate cost price (typically 85-90% of selling price for fuel stations)
-            const costPricePerLitre = sellingPricePerLitre * 0.88; // 12% margin assumption
+            // Get purchase price for this fuel type (cost price)
+            const purchasePrice = await prisma.purchasePrice.findFirst({
+                where: {
+                    fuelTypeId: fuelType.id,
+                    isActive: true
+                },
+                orderBy: { createdAt: 'desc' }
+            });
+
+            const costPricePerLitre = purchasePrice ? Number(purchasePrice.perLitre) : averageSellingPrice * 0.88; // Fallback to 12% margin if no purchase price
 
             const costPrice = totalLitresForType * costPricePerLitre;
             const profit = totalRevenueForType - costPrice;
@@ -583,7 +622,7 @@ app.get('/api/reports/summary', async (req, res) => {
 
             totalCostPrice += costPrice;
             totalSellingPrice += totalRevenueForType;
-        });
+        }
 
         const totalProfit = totalSellingPrice - totalCostPrice;
         const overallMargin = totalSellingPrice > 0 ? (totalProfit / totalSellingPrice) * 100 : 0;
@@ -619,7 +658,9 @@ app.get('/api/reports/summary', async (req, res) => {
                 margin: overallMargin
             },
             fuelTypes: fuelTypesWithStats,
-            fuelTypeProfits: Object.values(fuelTypeProfits),
+            fuelTypeProfits: Object.values(fuelTypeProfits)
+                .filter(profit => profit.sellingPrice > 0 || profit.profit > 0) // Filter out zero values
+                .sort((a, b) => b.sellingPrice - a.sellingPrice), // Sort by selling price (highest first)
             financials: {
                 totalRevenue: totalRevenue,
                 creditToCollect: totalCredits,
@@ -1616,6 +1657,124 @@ app.use('/api/online-payments', createOnlinePaymentsRouter(prisma));
 app.use('/api/validation', createValidationRouter(prisma));
 app.use('/api/seed', createSeedRouter(prisma));
 app.use('/api/logs', logsRouter);
+
+// Reports diagnostic endpoint
+app.get('/api/reports/debug', async (req, res) => {
+    try {
+        const { period = 'daily', date } = req.query;
+        const targetDate = date ? new Date(date as string) : new Date();
+
+        // Calculate date range based on period
+        let startDate: Date, endDate: Date;
+        if (period === 'daily') {
+            startDate = new Date(targetDate);
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date(targetDate);
+            endDate.setHours(23, 59, 59, 999);
+        } else if (period === 'weekly') {
+            startDate = new Date(targetDate);
+            startDate.setDate(startDate.getDate() - startDate.getDay());
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date(startDate);
+            endDate.setDate(endDate.getDate() + 6);
+            endDate.setHours(23, 59, 59, 999);
+        } else { // monthly
+            startDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
+            endDate = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0);
+            endDate.setHours(23, 59, 59, 999);
+        }
+
+        // Check what data exists in the date range
+        const readings = await prisma.dailyReading.findMany({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            },
+            include: {
+                pump: {
+                    include: {
+                        fuelType: true
+                    }
+                }
+            }
+        });
+
+        const sales = await prisma.sale.findMany({
+            where: {
+                createdAt: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            }
+        });
+
+        const cashReceipts = await prisma.cashReceipt.findMany({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            }
+        });
+
+        const onlinePayments = await prisma.onlinePayment.findMany({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            }
+        });
+
+        const credits = await prisma.clientCredit.findMany({
+            where: {
+                date: {
+                    gte: startDate,
+                    lte: endDate
+                }
+            }
+        });
+
+        // Calculate what the reports should show
+        const totalRevenue = readings.reduce((sum, reading) => sum + Number(reading.revenue), 0);
+        const totalLitres = readings.reduce((sum, reading) => {
+            const sold = Number(reading.openingLitres) - Number(reading.closingLitres);
+            return sum + sold;
+        }, 0);
+
+        res.json({
+            debug: {
+                dateRange: {
+                    start: startDate.toISOString(),
+                    end: endDate.toISOString(),
+                    period
+                },
+                dataCounts: {
+                    readings: readings.length,
+                    sales: sales.length,
+                    cashReceipts: cashReceipts.length,
+                    onlinePayments: onlinePayments.length,
+                    credits: credits.length
+                },
+                calculations: {
+                    totalRevenue,
+                    totalLitres,
+                    averagePrice: totalLitres > 0 ? totalRevenue / totalLitres : 0
+                },
+                sampleData: {
+                    readings: readings.slice(0, 3),
+                    sales: sales.slice(0, 3)
+                }
+            }
+        });
+
+    } catch (error: any) {
+        console.error('Error in reports debug:', error);
+        res.status(500).json({ error: error.message });
+    }
+});
 
 // Add missing API endpoints that the frontend uses
 // Clients API (since we deleted the clients route file)

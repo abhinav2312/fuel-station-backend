@@ -20,19 +20,20 @@ export function createReportsRouter(prisma: PrismaClient) {
         let petrolRevenue = 0, dieselRevenue = 0, premiumPetrolRevenue = 0;
         for (const r of readings) {
             const sold = Number(r.openingLitres) - Number(r.closingLitres); // opening - closing = sold
-            const readingRevenue = Number(r.revenue);
+            const pricePerLitre = Number(r.pricePerLitre);
+            const calculatedRevenue = sold * pricePerLitre; // Calculate revenue instead of using stored
             litres += sold;
-            revenue += readingRevenue; // Use stored revenue instead of calculating
+            revenue += calculatedRevenue;
             const fuelTypeName = r.pump.fuelType.name.toLowerCase();
             if (fuelTypeName === 'petrol') {
                 petrolLitres += sold;
-                petrolRevenue += readingRevenue;
+                petrolRevenue += calculatedRevenue;
             } else if (fuelTypeName === 'diesel') {
                 dieselLitres += sold;
-                dieselRevenue += readingRevenue;
+                dieselRevenue += calculatedRevenue;
             } else if (fuelTypeName === 'premium petrol') {
                 premiumPetrolLitres += sold;
-                premiumPetrolRevenue += readingRevenue;
+                premiumPetrolRevenue += calculatedRevenue;
             }
         }
 
@@ -84,10 +85,10 @@ export function createReportsRouter(prisma: PrismaClient) {
             totalRevenue: revenue,
             sampleReading: readings[0] ? {
                 id: readings[0].id,
-                revenue: readings[0].revenue,
                 openingLitres: readings[0].openingLitres,
                 closingLitres: readings[0].closingLitres,
                 pricePerLitre: readings[0].pricePerLitre,
+                calculatedRevenue: (Number(readings[0].openingLitres) - Number(readings[0].closingLitres)) * Number(readings[0].pricePerLitre),
                 fuelType: readings[0].pump?.fuelType?.name
             } : 'No readings found'
         });
