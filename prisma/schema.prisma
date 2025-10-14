@@ -21,6 +21,7 @@ model FuelType {
   tanks        Tank[]
   pumps        Pump[]
   prices       Price[]
+  purchasePrices PurchasePrice[]
   credits      ClientCredit[]
   sales        Sale[]
   
@@ -66,6 +67,21 @@ model Pump {
 // ===========================================
 
 model Price {
+  id         Int      @id @default(autoincrement())
+  perLitre   Decimal
+  isActive   Boolean  @default(true)
+  
+  // Relations
+  fuelTypeId Int
+  fuelType   FuelType @relation(fields: [fuelTypeId], references: [id])
+  
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  
+  @@index([fuelTypeId, isActive])
+}
+
+model PurchasePrice {
   id         Int      @id @default(autoincrement())
   perLitre   Decimal
   isActive   Boolean  @default(true)

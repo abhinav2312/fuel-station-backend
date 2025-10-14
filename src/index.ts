@@ -1489,14 +1489,14 @@ app.post('/api/readings/bulk', async (req, res) => {
 
 app.get('/api/purchase-prices', async (_req, res) => {
     try {
-        // Get current active prices for each tank from Price table
+        // Get current active purchase prices for each tank from PurchasePrice table
         const tanks = await prisma.tank.findMany({
             include: { fuelType: true }
         });
         const purchasePrices: Record<number, number> = {};
 
         for (const tank of tanks) {
-            const activePrice = await prisma.price.findFirst({
+            const activePurchasePrice = await prisma.purchasePrice.findFirst({
                 where: {
                     fuelTypeId: tank.fuelTypeId,
                     isActive: true
@@ -1504,10 +1504,10 @@ app.get('/api/purchase-prices', async (_req, res) => {
                 orderBy: { createdAt: 'desc' }
             });
 
-            if (activePrice) {
-                purchasePrices[tank.id] = Number(activePrice.perLitre);
+            if (activePurchasePrice) {
+                purchasePrices[tank.id] = Number(activePurchasePrice.perLitre);
             } else {
-                // Default prices if no active price found
+                // Default prices if no active purchase price found
                 purchasePrices[tank.id] = 0;
             }
         }
@@ -1536,8 +1536,8 @@ app.post('/api/purchase-prices', async (req, res) => {
                 });
 
                 if (tank) {
-                    // Deactivate current price for this fuel type
-                    await prisma.price.updateMany({
+                    // Deactivate current purchase price for this fuel type
+                    await prisma.purchasePrice.updateMany({
                         where: {
                             fuelTypeId: tank.fuelTypeId,
                             isActive: true
@@ -1545,8 +1545,8 @@ app.post('/api/purchase-prices', async (req, res) => {
                         data: { isActive: false }
                     });
 
-                    // Create new price record
-                    const newPrice = await prisma.price.create({
+                    // Create new purchase price record
+                    const newPurchasePrice = await prisma.purchasePrice.create({
                         data: {
                             fuelTypeId: tank.fuelTypeId,
                             perLitre: priceValue,
@@ -1558,7 +1558,7 @@ app.post('/api/purchase-prices', async (req, res) => {
                         tankId: parseInt(tankId),
                         fuelTypeId: tank.fuelTypeId,
                         price: priceValue,
-                        priceId: newPrice.id
+                        purchasePriceId: newPurchasePrice.id
                     });
                 }
             }
