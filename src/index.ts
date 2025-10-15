@@ -502,9 +502,12 @@ app.get('/api/reports/summary', async (req, res) => {
             endDate = new Date(customEndDate as string);
             endDate.setHours(23, 59, 59, 999);
         } else if (period === 'today') {
+            // Handle timezone: look for data from yesterday to tomorrow to account for timezone differences
             startDate = new Date();
+            startDate.setDate(startDate.getDate() - 1); // Yesterday
             startDate.setHours(0, 0, 0, 0);
             endDate = new Date();
+            endDate.setDate(endDate.getDate() + 1); // Tomorrow
             endDate.setHours(23, 59, 59, 999);
         } else if (period === 'thisWeek') {
             startDate = new Date();
@@ -1980,21 +1983,38 @@ app.get('/api/reports/debug', async (req, res) => {
 
         // Calculate date range based on period
         let startDate: Date, endDate: Date;
-        if (period === 'daily') {
-            startDate = new Date(targetDate);
+        if (period === 'today') {
+            // Handle timezone: look for data from yesterday to tomorrow to account for timezone differences
+            startDate = new Date();
+            startDate.setDate(startDate.getDate() - 1); // Yesterday
             startDate.setHours(0, 0, 0, 0);
-            endDate = new Date(targetDate);
+            endDate = new Date();
+            endDate.setDate(endDate.getDate() + 1); // Tomorrow
             endDate.setHours(23, 59, 59, 999);
-        } else if (period === 'weekly') {
-            startDate = new Date(targetDate);
+        } else if (period === 'thisWeek') {
+            startDate = new Date();
             startDate.setDate(startDate.getDate() - startDate.getDay());
             startDate.setHours(0, 0, 0, 0);
-            endDate = new Date(startDate);
-            endDate.setDate(endDate.getDate() + 6);
+            endDate = new Date();
             endDate.setHours(23, 59, 59, 999);
-        } else { // monthly
+        } else if (period === 'thisMonth') {
             startDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
             endDate = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0);
+            endDate.setHours(23, 59, 59, 999);
+        } else if (period === 'last6Months') {
+            startDate = new Date();
+            startDate.setMonth(startDate.getMonth() - 6);
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date();
+            endDate.setHours(23, 59, 59, 999);
+        } else if (period === 'thisYear') {
+            startDate = new Date(targetDate.getFullYear(), 0, 1);
+            endDate = new Date(targetDate.getFullYear(), 11, 31);
+            endDate.setHours(23, 59, 59, 999);
+        } else { // default to today
+            startDate = new Date();
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date();
             endDate.setHours(23, 59, 59, 999);
         }
 
