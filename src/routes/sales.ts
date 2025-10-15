@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { TankValidator } from '../utils/tank-validations';
 
-export function createSalesRouter(prisma: PrismaClient) {
+export function createSalesRouter(prisma: PrismaClient, tankValidator: TankValidator) {
     const router = Router();
 
     router.get('/', async (_req, res) => {
@@ -16,10 +17,28 @@ export function createSalesRouter(prisma: PrismaClient) {
             return res.status(400).json({ message: 'tankId and litres are required' });
         }
 
+        // Validate tank capacity before proceeding
+        const validation = await tankValidator.validateSale(tankId, Number(litres));
+        if (!validation.isValid) {
+            return res.status(400).json({
+                message: 'Sale validation failed',
+                error: validation.error,
+                details: {
+                    availableFuel: validation.availableFuel,
+                    currentLevel: validation.currentLevel,
+                    capacity: validation.capacity
+                }
+            });
+        }
+
         const result = await prisma.$transaction(async (tx) => {
             const tank = await tx.tank.findUnique({ where: { id: tankId }, include: { fuelType: true } });
             if (!tank) throw new Error('Tank not found');
-            if (Number(tank.currentLevel) < Number(litres)) throw new Error('Insufficient stock');
+
+            // Double-check capacity (in case of race conditions)
+            if (Number(tank.currentLevel) < Number(litres)) {
+                throw new Error(`Insufficient fuel in tank. Available: ${tank.currentLevel}L, trying to sell: ${litres}L`);
+            }
 
             const price = await tx.price.findFirst({ where: { fuelTypeId: tank.fuelTypeId, isActive: true }, orderBy: { createdAt: 'desc' } });
             if (!price) throw new Error('No active price');

@@ -1,7 +1,8 @@
 import { Router } from 'express';
 import { PrismaClient } from '@prisma/client';
+import { TankValidator } from '../utils/tank-validations';
 
-export function createPurchasesRouter(prisma: PrismaClient) {
+export function createPurchasesRouter(prisma: PrismaClient, tankValidator: TankValidator) {
     const router = Router();
 
     router.get('/', async (_req, res) => {
@@ -15,6 +16,21 @@ export function createPurchasesRouter(prisma: PrismaClient) {
             if (!tankId || !litres || !unitCost) return res.status(400).json({ message: 'tankId, litres, unitCost required' });
 
             console.log('Purchase request:', { tankId, litres, unitCost, date });
+
+            // Validate tank capacity before proceeding
+            const validation = await tankValidator.validatePurchase(tankId, Number(litres));
+            if (!validation.isValid) {
+                console.error('❌ Purchase validation failed:', validation.error);
+                return res.status(400).json({
+                    message: 'Purchase validation failed',
+                    error: validation.error,
+                    details: {
+                        availableSpace: validation.availableSpace,
+                        currentLevel: validation.currentLevel,
+                        capacity: validation.capacity
+                    }
+                });
+            }
 
             // Get tank first
             const tank = await prisma.tank.findUnique({ where: { id: tankId } });
@@ -77,10 +93,18 @@ export function createPurchasesRouter(prisma: PrismaClient) {
             const tank = purchase.tank;
             const newLevel = Number(tank.currentLevel) + Number(purchase.litres);
 
-            // Check if tank has enough capacity
-            if (newLevel > Number(tank.capacityLit)) {
-                const errorMsg = `Cannot unload ${purchase.litres}L to tank. Tank capacity is ${tank.capacityLit}L and current level is ${tank.currentLevel}L. Maximum that can be added is ${Number(tank.capacityLit) - Number(tank.currentLevel)}L`;
-                return res.status(400).json({ message: errorMsg });
+            // Validate tank capacity before unloading
+            const validation = await tankValidator.validatePurchase(tank.id, Number(purchase.litres));
+            if (!validation.isValid) {
+                return res.status(400).json({
+                    message: 'Unload validation failed',
+                    error: validation.error,
+                    details: {
+                        availableSpace: validation.availableSpace,
+                        currentLevel: validation.currentLevel,
+                        capacity: validation.capacity
+                    }
+                });
             }
 
             // Calculate new average unit cost
@@ -140,6 +164,28 @@ export function createPurchasesRouter(prisma: PrismaClient) {
             res.json({ message: `Cleaned up ${result.count} records`, count: result.count });
         } catch (error: any) {
             console.error('Error cleaning up purchases:', error);
+            res.status(500).json({ error: error.message });
+        }
+    });
+
+    // Get tank status for validation
+    router.get('/tank-status/:tankId', async (req, res) => {
+        try {
+            const { tankId } = req.params;
+            const tankIdNum = parseInt(tankId);
+
+            if (isNaN(tankIdNum)) {
+                return res.status(400).json({ message: 'Invalid tank ID' });
+            }
+
+            const tankStatus = await tankValidator.getTankStatus(tankIdNum);
+            if (!tankStatus) {
+                return res.status(404).json({ message: 'Tank not found' });
+            }
+
+            res.json(tankStatus);
+        } catch (error: any) {
+            console.error('Error getting tank status:', error);
             res.status(500).json({ error: error.message });
         }
     });

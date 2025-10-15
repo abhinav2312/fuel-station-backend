@@ -3,11 +3,19 @@ import express from 'express';
 import cors from 'cors';
 import { PrismaClient } from '@prisma/client';
 import { backendLogger, log } from './utils/logger';
+import { createTankValidator } from './utils/tank-validations';
+
+// Constants
+const DEFAULT_MARGIN_PERCENTAGE = 0.12; // 12% margin
+const MAX_READINGS_PER_REQUEST = 50;
+const DEFAULT_PAGE_SIZE = 10;
+const MAX_PAGE_SIZE = 100;
 
 // DATABASE_URL is automatically provided by Render when you connect a PostgreSQL database
 // No need to set a fallback - Render will provide the correct connection string
 
 const prisma = new PrismaClient();
+const tankValidator = createTankValidator(prisma);
 const app = express();
 
 // In-memory storage for demo purposes
@@ -127,7 +135,7 @@ app.get('/api/db-check', async (_req, res) => {
         const recentReadings = await prisma.dailyReading.findMany({
             take: 3,
             orderBy: { date: 'desc' },
-            include: { pump: { include: { fuelType: true } } }
+            include: { pump: { include: { fuelType: { include: { purchasePrices: true } } } } }
         });
 
         const recentSales = await prisma.sale.findMany({
@@ -374,33 +382,54 @@ app.get('/api/online-payments', async (req, res) => {
 // GET trends endpoint for dashboard charts
 app.get('/api/reports/trends', async (req, res) => {
     try {
-        const { period = 'today' } = req.query;
+        const { period = 'today', startDate: customStartDate, endDate: customEndDate } = req.query;
         const endDate = new Date();
         const startDate = new Date();
 
         // Calculate date range based on period
-        switch (period) {
-            case 'today':
-                startDate.setHours(0, 0, 0, 0);
-                endDate.setHours(23, 59, 59, 999);
-                break;
-            case 'week':
-                startDate.setDate(startDate.getDate() - 7);
-                break;
-            case 'month':
-                startDate.setMonth(startDate.getMonth() - 1);
-                break;
-            case 'year':
-                startDate.setFullYear(startDate.getFullYear() - 1);
-                break;
-            default:
-                startDate.setDate(startDate.getDate() - 7);
+        if (period === 'custom' && customStartDate && customEndDate) {
+            // Custom date range
+            startDate.setTime(new Date(customStartDate as string).getTime());
+            startDate.setHours(0, 0, 0, 0);
+            endDate.setTime(new Date(customEndDate as string).getTime());
+            endDate.setHours(23, 59, 59, 999);
+        } else {
+            switch (period) {
+                case 'today':
+                    startDate.setHours(0, 0, 0, 0);
+                    endDate.setHours(23, 59, 59, 999);
+                    break;
+                case '1w':
+                    startDate.setDate(startDate.getDate() - 7);
+                    startDate.setHours(0, 0, 0, 0);
+                    endDate.setHours(23, 59, 59, 999);
+                    break;
+                case '1m':
+                    startDate.setMonth(startDate.getMonth() - 1);
+                    startDate.setHours(0, 0, 0, 0);
+                    endDate.setHours(23, 59, 59, 999);
+                    break;
+                case '6m':
+                    startDate.setMonth(startDate.getMonth() - 6);
+                    startDate.setHours(0, 0, 0, 0);
+                    endDate.setHours(23, 59, 59, 999);
+                    break;
+                case '1yr':
+                    startDate.setFullYear(startDate.getFullYear() - 1);
+                    startDate.setHours(0, 0, 0, 0);
+                    endDate.setHours(23, 59, 59, 999);
+                    break;
+                default:
+                    startDate.setDate(startDate.getDate() - 7);
+                    startDate.setHours(0, 0, 0, 0);
+                    endDate.setHours(23, 59, 59, 999);
+            }
         }
 
-        // Get sales data for the trend period
-        const sales = await prisma.sale.findMany({
+        // Get sales data from daily readings (same as reports summary)
+        const readings = await prisma.dailyReading.findMany({
             where: {
-                createdAt: {
+                date: {
                     gte: startDate,
                     lte: endDate
                 }
@@ -408,61 +437,47 @@ app.get('/api/reports/trends', async (req, res) => {
             include: {
                 pump: {
                     include: {
-                        fuelType: true
+                        fuelType: {
+                            include: {
+                                purchasePrices: true
+                            }
+                        }
                     }
                 }
             },
             orderBy: {
-                createdAt: 'asc'
+                date: 'asc'
             }
         });
 
-        // Group sales by appropriate time period
-        const groupedSales: Record<string, { sales: number; profit: number }> = {};
+        // Group sales by fuel type instead of time period
+        const groupedSales: Record<string, { litres: number; revenue: number }> = {};
 
-        sales.forEach(sale => {
-            let groupKey: string;
+        readings.forEach(reading => {
+            const fuelTypeName = reading.pump.fuelType.name;
 
-            switch (period) {
-                case 'today':
-                    // Group by hour for today
-                    groupKey = sale.createdAt.toISOString().split('T')[1].split(':')[0] + ':00';
-                    break;
-                case 'week':
-                    // Group by day for week
-                    groupKey = sale.createdAt.toISOString().split('T')[0];
-                    break;
-                case 'month':
-                    // Group by week for month
-                    const weekStart = new Date(sale.createdAt);
-                    weekStart.setDate(weekStart.getDate() - weekStart.getDay());
-                    groupKey = weekStart.toISOString().split('T')[0];
-                    break;
-                case 'year':
-                    // Group by month for year
-                    groupKey = sale.createdAt.toISOString().substring(0, 7); // YYYY-MM
-                    break;
-                default:
-                    groupKey = sale.createdAt.toISOString().split('T')[0];
+            if (!groupedSales[fuelTypeName]) {
+                groupedSales[fuelTypeName] = { litres: 0, revenue: 0 };
             }
 
-            if (!groupedSales[groupKey]) {
-                groupedSales[groupKey] = { sales: 0, profit: 0 };
-            }
-            groupedSales[groupKey].sales += Number(sale.totalAmount);
-            // Calculate profit (assuming 12% margin)
-            groupedSales[groupKey].profit += Number(sale.totalAmount) * 0.12;
+            // Calculate fuel sold and revenue from readings
+            const sold = Number(reading.closingLitres) - Number(reading.openingLitres);
+            const pricePerLitre = Number(reading.pricePerLitre);
+            const revenue = sold * pricePerLitre;
+
+            groupedSales[fuelTypeName].litres += sold;
+            groupedSales[fuelTypeName].revenue += revenue;
         });
 
         // Convert to array format for charts
         const trendData = Object.entries(groupedSales)
-            .map(([date, data]) => ({
-                date,
-                sales: Math.round(data.sales),
-                profit: Math.round(data.profit)
+            .map(([fuelType, data]) => ({
+                fuelType,
+                litres: Math.round(data.litres * 100) / 100, // Round to 2 decimal places
+                revenue: Math.round(data.revenue)
             }))
-            .filter(item => item.sales > 0 || item.profit > 0) // Filter out zero values
-            .sort((a, b) => b.sales - a.sales); // Sort by sales value (highest first)
+            .filter(item => item.litres > 0 || item.revenue > 0) // Filter out zero values
+            .sort((a, b) => b.revenue - a.revenue); // Sort by revenue (highest first)
 
         res.json(trendData);
     } catch (error: any) {
@@ -473,30 +488,54 @@ app.get('/api/reports/trends', async (req, res) => {
 
 app.get('/api/reports/summary', async (req, res) => {
     try {
-        const { period = 'daily', date } = req.query;
+        console.log('Reports summary endpoint called with:', { period: req.query.period, date: req.query.date, startDate: req.query.startDate, endDate: req.query.endDate });
+        const { period = 'daily', date, startDate: customStartDate, endDate: customEndDate } = req.query;
         const targetDate = date ? new Date(date as string) : new Date();
+        console.log('Target date:', targetDate);
 
         // Calculate date range based on period
         let startDate: Date, endDate: Date;
-        if (period === 'daily') {
-            startDate = new Date(targetDate);
+        if (period === 'custom' && customStartDate && customEndDate) {
+            // Custom date range
+            startDate = new Date(customStartDate as string);
             startDate.setHours(0, 0, 0, 0);
-            endDate = new Date(targetDate);
+            endDate = new Date(customEndDate as string);
             endDate.setHours(23, 59, 59, 999);
-        } else if (period === 'weekly') {
-            startDate = new Date(targetDate);
+        } else if (period === 'today') {
+            startDate = new Date();
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date();
+            endDate.setHours(23, 59, 59, 999);
+        } else if (period === 'thisWeek') {
+            startDate = new Date();
             startDate.setDate(startDate.getDate() - startDate.getDay());
             startDate.setHours(0, 0, 0, 0);
-            endDate = new Date(startDate);
-            endDate.setDate(endDate.getDate() + 6);
+            endDate = new Date();
             endDate.setHours(23, 59, 59, 999);
-        } else { // monthly
+        } else if (period === 'thisMonth') {
             startDate = new Date(targetDate.getFullYear(), targetDate.getMonth(), 1);
             endDate = new Date(targetDate.getFullYear(), targetDate.getMonth() + 1, 0);
+            endDate.setHours(23, 59, 59, 999);
+        } else if (period === 'last6Months') {
+            startDate = new Date();
+            startDate.setMonth(startDate.getMonth() - 6);
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date();
+            endDate.setHours(23, 59, 59, 999);
+        } else if (period === 'thisYear') {
+            startDate = new Date(targetDate.getFullYear(), 0, 1);
+            endDate = new Date(targetDate.getFullYear(), 11, 31);
+            endDate.setHours(23, 59, 59, 999);
+        } else {
+            // Default to today
+            startDate = new Date();
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date();
             endDate.setHours(23, 59, 59, 999);
         }
 
         // Get sales data from daily readings (actual fuel sold)
+        console.log('Fetching readings for date range:', { startDate, endDate });
         const readings = await prisma.dailyReading.findMany({
             where: {
                 date: {
@@ -512,10 +551,11 @@ app.get('/api/reports/summary', async (req, res) => {
                 }
             }
         });
+        console.log('Found readings:', readings.length);
 
         // Convert readings to sales format for compatibility
         const sales = readings.map(reading => {
-            const litres = Number(reading.openingLitres) - Number(reading.closingLitres);
+            const litres = Number(reading.closingLitres) - Number(reading.openingLitres);
             const pricePerLitre = Number(reading.pricePerLitre);
             const calculatedRevenue = litres * pricePerLitre;
 
@@ -565,9 +605,11 @@ app.get('/api/reports/summary', async (req, res) => {
         const totalCredits = credits.reduce((sum, credit) => sum + Number(credit.totalAmount), 0);
 
         // Get all fuel types from database first
+        console.log('Fetching fuel types...');
         const fuelTypes = await prisma.fuelType.findMany({
             orderBy: { id: 'asc' }
         });
+        console.log('Found fuel types:', fuelTypes.length);
 
         // Get current prices for profit calculations
         const currentPrices = await prisma.price.findMany({
@@ -605,7 +647,7 @@ app.get('/api/reports/summary', async (req, res) => {
                 orderBy: { createdAt: 'desc' }
             });
 
-            const costPricePerLitre = purchasePrice ? Number(purchasePrice.perLitre) : averageSellingPrice * 0.88; // Fallback to 12% margin if no purchase price
+            const costPricePerLitre = purchasePrice ? Number(purchasePrice.perLitre) : averageSellingPrice * (1 - DEFAULT_MARGIN_PERCENTAGE); // Fallback to configured margin if no purchase price
 
             const costPrice = totalLitresForType * costPricePerLitre;
             const profit = totalRevenueForType - costPrice;
@@ -627,16 +669,26 @@ app.get('/api/reports/summary', async (req, res) => {
         const totalProfit = totalSellingPrice - totalCostPrice;
         const overallMargin = totalSellingPrice > 0 ? (totalProfit / totalSellingPrice) * 100 : 0;
 
-        // Group by fuel type
+        // Group by fuel type using readings data (more reliable than sales data)
         const fuelTypeStats: Record<number, { litres: number; revenue: number }> = {};
-        sales.forEach(sale => {
-            const fuelTypeId = sale.pump.fuelType.id;
+
+        // Use readings data for fuel type calculations
+        readings.forEach(reading => {
+            const fuelTypeId = reading.pump.fuelType.id;
             if (!fuelTypeStats[fuelTypeId]) {
                 fuelTypeStats[fuelTypeId] = { litres: 0, revenue: 0 };
             }
-            fuelTypeStats[fuelTypeId].litres += Number(sale.litres);
-            fuelTypeStats[fuelTypeId].revenue += Number(sale.totalAmount);
+
+            const sold = Number(reading.closingLitres) - Number(reading.openingLitres); // Closing - Opening = Fuel Sold
+            const revenue = sold * Number(reading.pricePerLitre);
+
+            fuelTypeStats[fuelTypeId].litres += sold;
+            fuelTypeStats[fuelTypeId].revenue += revenue;
         });
+
+        console.log('Fuel type stats from readings:', fuelTypeStats);
+        console.log('Total readings found:', readings.length);
+        console.log('Sample reading:', readings[0]);
 
         // Create fuel types array with stats
         const fuelTypesWithStats = fuelTypes.map(fuelType => ({
@@ -842,38 +894,45 @@ app.get('/api/prices', async (_req, res) => {
 // Add missing prices endpoints
 app.get('/api/prices/combined', async (_req, res) => {
     try {
-        // Get historical prices for all fuel types
+        console.log('Fetching combined prices...');
+
+        // Get all fuel types
+        const fuelTypes = await prisma.fuelType.findMany();
+        if (fuelTypes.length === 0) return res.json([]);
+
+        // Get historical prices for all fuel types (including active ones)
         const prices = await prisma.price.findMany({
-            include: {
-                fuelType: true
-            },
-            orderBy: {
-                createdAt: 'desc'
-            },
-            take: 30 // Get last 30 price records
+            where: { fuelTypeId: { in: fuelTypes.map(ft => ft.id) } },
+            orderBy: { createdAt: 'desc' },
+            take: 200,
         });
 
-        // Group prices by date
-        const priceMap: Record<string, Record<string, number>> = {};
+        console.log(`Found ${prices.length} price records`);
 
-        prices.forEach(price => {
-            const date = price.createdAt.toISOString().split('T')[0];
-            const fuelTypeKey = price.fuelType.name.toLowerCase().replace(/\s+/g, '');
-
-            if (!priceMap[date]) {
-                priceMap[date] = {};
+        // Group by exact timestamp to preserve individual updates
+        const byTs = new Map<string, Record<string, any>>();
+        for (const p of prices) {
+            const ts = p.createdAt.toISOString();
+            const row = byTs.get(ts) ?? { date: ts };
+            const fuelType = fuelTypes.find(ft => ft.id === p.fuelTypeId);
+            if (fuelType) {
+                const key = fuelType.name.toLowerCase().replace(/\s+/g, '');
+                // Only set if not already set, or if this is a more recent record (higher ID)
+                if (!row[key] || p.id > (row[`${key}_id`] || 0)) {
+                    row[key] = Number(p.perLitre);
+                    row[`${key}_id`] = p.id;
+                }
             }
+            byTs.set(ts, row);
+        }
 
-            priceMap[date][fuelTypeKey] = Number(price.perLitre);
-        });
+        // Convert to array and sort by date (newest first)
+        const rows = Array.from(byTs.entries())
+            .map(([_, v]) => v)
+            .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 
-        // Convert to array format expected by frontend
-        const combined = Object.entries(priceMap).map(([date, prices]) => ({
-            date,
-            ...prices
-        }));
-
-        res.json(combined);
+        console.log(`Returning ${rows.length} combined price entries`);
+        res.json(rows);
     } catch (error: any) {
         console.error('Error fetching combined prices:', error);
         res.status(500).json({ error: error.message });
@@ -884,6 +943,24 @@ app.post('/api/prices/set', async (req, res) => {
     try {
         const { prices, date } = req.body;
         console.log('Setting prices:', prices, 'for date:', date);
+
+        // Validate required fields
+        if (!prices || typeof prices !== 'object') {
+            return res.status(400).json({
+                message: 'Invalid prices data',
+                error: 'prices object is required',
+                details: { prices }
+            });
+        }
+
+        // Validate date if provided
+        if (date && isNaN(new Date(date).getTime())) {
+            return res.status(400).json({
+                message: 'Invalid date',
+                error: 'Date must be a valid date string',
+                details: { date }
+            });
+        }
 
         // Get all fuel types to map names to IDs
         const fuelTypes = await prisma.fuelType.findMany();
@@ -900,24 +977,41 @@ app.post('/api/prices/set', async (req, res) => {
             data: { isActive: false }
         });
 
-        // Create new prices for each fuel type
-        const priceEntries = Object.entries(prices).map(([fuelTypeName, price]) => {
+        // Validate and create new prices for each fuel type
+        const priceEntries = [];
+        for (const [fuelTypeName, price] of Object.entries(prices)) {
             const fuelTypeId = fuelTypeMap[fuelTypeName];
             if (!fuelTypeId) {
-                throw new Error(`Unknown fuel type: ${fuelTypeName}`);
+                return res.status(400).json({
+                    message: 'Invalid fuel type',
+                    error: `Unknown fuel type: ${fuelTypeName}`,
+                    details: { fuelTypeName, availableTypes: Object.keys(fuelTypeMap) }
+                });
             }
 
-            return {
+            // Validate price value
+            const priceNum = parseFloat(price as string);
+            if (isNaN(priceNum) || priceNum < 0) {
+                return res.status(400).json({
+                    message: 'Invalid price value',
+                    error: `Price must be a non-negative number, got: ${price}`,
+                    details: { fuelTypeName, price }
+                });
+            }
+
+            priceEntries.push({
                 fuelTypeId: fuelTypeId,
-                perLitre: parseFloat(price as string),
+                perLitre: priceNum,
                 isActive: true,
                 createdAt: date ? new Date(date) : new Date()
-            };
-        });
+            });
+        }
 
-        await prisma.price.createMany({
+        const result = await prisma.price.createMany({
             data: priceEntries
         });
+
+        console.log(`Created ${result.count} new price records`);
 
         res.json({
             success: true,
@@ -1203,7 +1297,7 @@ app.get('/api/validation', async (req, res) => {
 
         readings.forEach(reading => {
             // Fuel sold = Opening - Closing (fuel that went out of the tank)
-            const fuelSold = Number(reading.openingLitres) - Number(reading.closingLitres);
+            const fuelSold = Number(reading.closingLitres) - Number(reading.openingLitres);
             const currentPrice = prices.find(p => p.fuelTypeId === reading.pump.fuelTypeId);
 
             console.log(`Pump ${reading.pumpId}: Opening=${reading.openingLitres}L, Closing=${reading.closingLitres}L, Sold=${fuelSold}L at ₹${currentPrice?.perLitre || 0}/L`);
@@ -1283,7 +1377,7 @@ app.get('/api/validation', async (req, res) => {
         // The validation: Gross Sales should equal Total Received + Credit Sales
         // (Credit Sales are money to be received later)
         const expectedTotal = totalReceived + totalCreditSales;
-        const difference = grossSales - expectedTotal;
+        const difference = expectedTotal - grossSales; // Positive if received more than gross sales, negative if less
         const isBalanced = Math.abs(difference) < 0.01; // Allow for small rounding differences
 
         console.log(`Validation result: Gross Sales (₹${grossSales.toFixed(2)}) vs Expected (₹${expectedTotal.toFixed(2)}) = Difference: ₹${difference.toFixed(2)}`);
@@ -1334,15 +1428,70 @@ app.post('/api/readings', async (req, res) => {
     try {
         const { pumpId, date, openingLitres, closingLitres, pricePerLitre } = req.body;
 
+        // Validate required fields
+        if (!pumpId || !date || openingLitres === undefined || closingLitres === undefined) {
+            return res.status(400).json({
+                message: 'Missing required fields',
+                error: 'pumpId, date, openingLitres, and closingLitres are required',
+                details: { pumpId, date, openingLitres, closingLitres }
+            });
+        }
+
+        // Validate numeric values
+        const pumpIdNum = parseInt(pumpId);
+        const openingLitresNum = parseFloat(openingLitres);
+        const closingLitresNum = parseFloat(closingLitres);
+        const pricePerLitreNum = parseFloat(pricePerLitre);
+
+        if (isNaN(pumpIdNum) || pumpIdNum <= 0) {
+            return res.status(400).json({
+                message: 'Invalid pump ID',
+                error: `Pump ID must be a positive integer, got: ${pumpId}`,
+                details: { pumpId }
+            });
+        }
+
+        if (isNaN(openingLitresNum) || openingLitresNum < 0) {
+            return res.status(400).json({
+                message: 'Invalid opening litres',
+                error: `Opening litres must be a non-negative number, got: ${openingLitres}`,
+                details: { openingLitres }
+            });
+        }
+
+        if (isNaN(closingLitresNum) || closingLitresNum < 0) {
+            return res.status(400).json({
+                message: 'Invalid closing litres',
+                error: `Closing litres must be a non-negative number, got: ${closingLitres}`,
+                details: { closingLitres }
+            });
+        }
+
+        if (openingLitresNum > closingLitresNum) {
+            return res.status(400).json({
+                message: 'Invalid reading values',
+                error: 'Opening litres cannot be greater than closing litres (fuel cannot be added)',
+                details: { openingLitres: openingLitresNum, closingLitres: closingLitresNum }
+            });
+        }
+
+        if (pricePerLitre !== undefined && (isNaN(pricePerLitreNum) || pricePerLitreNum < 0)) {
+            return res.status(400).json({
+                message: 'Invalid price per litre',
+                error: `Price per litre must be a non-negative number, got: ${pricePerLitre}`,
+                details: { pricePerLitre }
+            });
+        }
+
         // Calculate revenue automatically: fuel sold × price per litre
-        const fuelSold = parseFloat(openingLitres) - parseFloat(closingLitres);
-        const calculatedRevenue = fuelSold > 0 ? fuelSold * parseFloat(pricePerLitre) : 0;
+        const fuelSold = closingLitresNum - openingLitresNum;
+        const calculatedRevenue = fuelSold > 0 ? fuelSold * (pricePerLitreNum || 0) : 0;
 
         console.log('Saving reading:', { pumpId, date, openingLitres, closingLitres, pricePerLitre, fuelSold, calculatedRevenue });
 
         // Get pump details to find fuel type
         const pump = await prisma.pump.findUnique({
-            where: { id: parseInt(pumpId) },
+            where: { id: pumpIdNum },
             include: { fuelType: true }
         });
 
@@ -1362,28 +1511,45 @@ app.post('/api/readings', async (req, res) => {
             return res.status(404).json({ error: `No active tank found for fuel type: ${pump.fuelType.name}` });
         }
 
+        // Validate tank capacity before proceeding (if fuel was sold)
+        if (fuelSold > 0) {
+            const validation = await tankValidator.validateSale(tank.id, fuelSold);
+            if (!validation.isValid) {
+                return res.status(400).json({
+                    message: 'Reading validation failed',
+                    error: validation.error,
+                    details: {
+                        availableFuel: validation.availableFuel,
+                        currentLevel: validation.currentLevel,
+                        capacity: validation.capacity,
+                        fuelSold
+                    }
+                });
+            }
+        }
+
         // Use transaction to ensure both reading and tank update succeed
         const result = await prisma.$transaction(async (tx) => {
             // Create or update daily reading
             const reading = await tx.dailyReading.upsert({
                 where: {
                     pumpId_date: {
-                        pumpId: parseInt(pumpId),
+                        pumpId: pumpIdNum,
                         date: new Date(date)
                     }
                 },
                 update: {
-                    openingLitres: parseFloat(openingLitres),
-                    closingLitres: parseFloat(closingLitres),
-                    pricePerLitre: parseFloat(pricePerLitre),
+                    openingLitres: openingLitresNum,
+                    closingLitres: closingLitresNum,
+                    pricePerLitre: pricePerLitreNum,
                     revenue: calculatedRevenue
                 },
                 create: {
-                    pumpId: parseInt(pumpId),
+                    pumpId: pumpIdNum,
                     date: new Date(date),
-                    openingLitres: parseFloat(openingLitres),
-                    closingLitres: parseFloat(closingLitres),
-                    pricePerLitre: parseFloat(pricePerLitre),
+                    openingLitres: openingLitresNum,
+                    closingLitres: closingLitresNum,
+                    pricePerLitre: pricePerLitreNum,
                     revenue: calculatedRevenue
                 },
                 include: {
@@ -1399,8 +1565,19 @@ app.post('/api/readings', async (req, res) => {
             if (fuelSold > 0) {
                 const newTankLevel = Number(tank.currentLevel) - fuelSold;
 
+                // Double-check capacity (in case of race conditions)
                 if (newTankLevel < 0) {
-                    throw new Error(`Insufficient fuel in tank. Tank has ${tank.currentLevel}L, trying to sell ${fuelSold}L`);
+                    return res.status(400).json({
+                        message: 'Insufficient fuel in tank',
+                        error: `Cannot sell ${fuelSold}L of fuel. Tank only has ${tank.currentLevel}L available.`,
+                        details: {
+                            tankId: tank.id,
+                            tankName: tank.name,
+                            availableFuel: Number(tank.currentLevel),
+                            tryingToSell: fuelSold,
+                            shortage: Math.abs(newTankLevel)
+                        }
+                    });
                 }
 
                 await tx.tank.update({
@@ -1432,11 +1609,93 @@ app.post('/api/readings/bulk', async (req, res) => {
             return res.status(400).json({ error: 'Readings array is required' });
         }
 
-        // Group readings by fuel type to calculate total fuel sold per fuel type
+        if (readings.length === 0) {
+            return res.status(400).json({
+                error: 'Readings array cannot be empty',
+                details: 'At least one reading is required'
+            });
+        }
+
+        if (readings.length > MAX_READINGS_PER_REQUEST) {
+            return res.status(400).json({
+                error: 'Too many readings',
+                details: `Maximum ${MAX_READINGS_PER_REQUEST} readings allowed per request, got ${readings.length}`
+            });
+        }
+
+        // Validate each reading has required fields
+        for (const reading of readings) {
+            if (!reading.pumpId || !reading.date ||
+                reading.openingLitres === undefined || reading.closingLitres === undefined) {
+                return res.status(400).json({
+                    message: 'Invalid reading data',
+                    error: 'Each reading must have pumpId, date, openingLitres, and closingLitres',
+                    details: { reading }
+                });
+            }
+
+            // Validate numeric values
+            const pumpId = parseInt(reading.pumpId);
+            const openingLitres = parseFloat(reading.openingLitres);
+            const closingLitres = parseFloat(reading.closingLitres);
+
+            if (isNaN(pumpId) || pumpId <= 0) {
+                return res.status(400).json({
+                    message: 'Invalid pump ID',
+                    error: `Pump ID must be a positive integer, got: ${reading.pumpId}`,
+                    details: { pumpId: reading.pumpId }
+                });
+            }
+
+            if (isNaN(openingLitres) || openingLitres < 0) {
+                return res.status(400).json({
+                    message: 'Invalid opening litres',
+                    error: `Opening litres must be a non-negative number, got: ${reading.openingLitres}`,
+                    details: { openingLitres: reading.openingLitres }
+                });
+            }
+
+            if (isNaN(closingLitres) || closingLitres < 0) {
+                return res.status(400).json({
+                    message: 'Invalid closing litres',
+                    error: `Closing litres must be a non-negative number, got: ${reading.closingLitres}`,
+                    details: { closingLitres: reading.closingLitres }
+                });
+            }
+
+            if (openingLitres > closingLitres) {
+                return res.status(400).json({
+                    message: 'Invalid reading values',
+                    error: 'Opening litres cannot be greater than closing litres (fuel cannot be added)',
+                    details: { openingLitres, closingLitres }
+                });
+            }
+        }
+
+        // Group readings by fuel type to calculate NET fuel sold per fuel type
         const fuelTypeTotals: Record<number, number> = {};
         const savedReadings = [];
 
-        // First pass: save all readings and calculate fuel sold per fuel type
+        // First pass: get existing readings to calculate differences
+        const existingReadings = await prisma.dailyReading.findMany({
+            where: {
+                pumpId: { in: readings.map(r => parseInt(r.pumpId)) },
+                date: {
+                    gte: new Date(readings[0].date),
+                    lt: new Date(new Date(readings[0].date).getTime() + 24 * 60 * 60 * 1000)
+                }
+            },
+            include: { pump: { include: { fuelType: true } } }
+        });
+
+        // Create a map of existing readings for quick lookup
+        const existingReadingsMap = new Map();
+        existingReadings.forEach(reading => {
+            const key = `${reading.pumpId}_${reading.date.toISOString().split('T')[0]}`;
+            existingReadingsMap.set(key, reading);
+        });
+
+        // First pass: save all readings and calculate NET fuel sold per fuel type
         for (const reading of readings) {
             const { pumpId, date, openingLitres, closingLitres, pricePerLitre, revenue } = reading;
 
@@ -1447,75 +1706,117 @@ app.post('/api/readings/bulk', async (req, res) => {
             });
 
             if (!pump) {
-                throw new Error(`Pump ${pumpId} not found`);
+                return res.status(400).json({
+                    message: 'Pump not found',
+                    error: `Pump with ID ${pumpId} does not exist`,
+                    details: { pumpId: parseInt(pumpId) }
+                });
             }
 
-            // Calculate fuel sold
-            const fuelSold = parseFloat(openingLitres) - parseFloat(closingLitres);
+            // Calculate new fuel sold
+            const newFuelSold = parseFloat(closingLitres) - parseFloat(openingLitres);
 
-            // Add to fuel type totals
-            if (fuelSold > 0) {
-                fuelTypeTotals[pump.fuelTypeId] = (fuelTypeTotals[pump.fuelTypeId] || 0) + fuelSold;
+            // Check if there's an existing reading for this pump/date
+            const key = `${pumpId}_${new Date(date).toISOString().split('T')[0]}`;
+            const existingReading = existingReadingsMap.get(key);
+
+            let netFuelSold = newFuelSold;
+            if (existingReading) {
+                // Calculate the difference: new fuel sold - old fuel sold
+                const oldFuelSold = parseFloat(existingReading.closingLitres) - parseFloat(existingReading.openingLitres);
+                netFuelSold = newFuelSold - oldFuelSold;
+                console.log(`Pump ${pumpId}: Old fuel sold: ${oldFuelSold}L, New fuel sold: ${newFuelSold}L, Net change: ${netFuelSold}L`);
+            }
+
+            // Add NET fuel sold to fuel type totals (only if there's a change)
+            if (netFuelSold !== 0) {
+                fuelTypeTotals[pump.fuelTypeId] = (fuelTypeTotals[pump.fuelTypeId] || 0) + netFuelSold;
             }
 
             // UPSERT: Update existing reading for this pump+date, or create new one
-            const savedReading = await prisma.dailyReading.upsert({
+            // Check if reading already exists for this pump+date
+            const currentReading = await prisma.dailyReading.findFirst({
                 where: {
-                    pumpId_date: {
-                        pumpId: parseInt(pumpId),
-                        date: new Date(date)
-                    }
-                },
-                update: {
-                    openingLitres: parseFloat(openingLitres),
-                    closingLitres: parseFloat(closingLitres),
-                    pricePerLitre: parseFloat(pricePerLitre),
-                    revenue: parseFloat(revenue || 0)
-                },
-                create: {
                     pumpId: parseInt(pumpId),
-                    date: new Date(date),
-                    openingLitres: parseFloat(openingLitres),
-                    closingLitres: parseFloat(closingLitres),
-                    pricePerLitre: parseFloat(pricePerLitre),
-                    revenue: parseFloat(revenue || 0)
-                },
-                include: {
-                    pump: {
-                        include: {
-                            fuelType: true
-                        }
+                    date: {
+                        gte: new Date(new Date(date).setHours(0, 0, 0, 0)),
+                        lt: new Date(new Date(date).setHours(23, 59, 59, 999))
                     }
                 }
             });
+
+            let savedReading;
+            if (currentReading) {
+                // Update existing reading
+                savedReading = await prisma.dailyReading.update({
+                    where: { id: currentReading.id },
+                    data: {
+                        openingLitres: parseFloat(openingLitres),
+                        closingLitres: parseFloat(closingLitres),
+                        pricePerLitre: parseFloat(pricePerLitre),
+                        revenue: parseFloat(revenue || 0)
+                    },
+                    include: {
+                        pump: {
+                            include: { fuelType: true }
+                        }
+                    }
+                });
+                console.log(`Updated existing reading for pump ${pumpId} on ${date}`);
+            } else {
+                // Create new reading
+                savedReading = await prisma.dailyReading.create({
+                    data: {
+                        pumpId: parseInt(pumpId),
+                        date: new Date(date),
+                        openingLitres: parseFloat(openingLitres),
+                        closingLitres: parseFloat(closingLitres),
+                        pricePerLitre: parseFloat(pricePerLitre),
+                        revenue: parseFloat(revenue || 0)
+                    },
+                    include: {
+                        pump: {
+                            include: { fuelType: true }
+                        }
+                    }
+                });
+                console.log(`Created new reading for pump ${pumpId} on ${date}`);
+            }
 
             savedReadings.push(savedReading);
         }
 
-        // Second pass: deduct fuel from tanks based on fuel type totals
-        for (const [fuelTypeId, totalFuelSold] of Object.entries(fuelTypeTotals)) {
-            const tank = await prisma.tank.findFirst({
-                where: {
-                    fuelTypeId: parseInt(fuelTypeId),
-                    isActive: true
-                }
-            });
-
-            if (tank) {
-                const newTankLevel = Number(tank.currentLevel) - totalFuelSold;
-
-                if (newTankLevel < 0) {
-                    throw new Error(`Insufficient fuel in tank for fuel type ${fuelTypeId}. Tank has ${tank.currentLevel}L, trying to sell ${totalFuelSold}L`);
-                }
-
-                await prisma.tank.update({
-                    where: { id: tank.id },
-                    data: { currentLevel: newTankLevel }
+        // Second pass: adjust tank levels based on NET fuel changes using transaction
+        await prisma.$transaction(async (tx) => {
+            for (const [fuelTypeId, netFuelChange] of Object.entries(fuelTypeTotals)) {
+                const tank = await tx.tank.findFirst({
+                    where: {
+                        fuelTypeId: parseInt(fuelTypeId),
+                        isActive: true
+                    }
                 });
 
-                console.log(`Deducted ${totalFuelSold}L from ${tank.name} (fuel type ${fuelTypeId}). New level: ${newTankLevel}L`);
+                if (tank) {
+                    const newTankLevel = Number(tank.currentLevel) - netFuelChange;
+
+                    // Check for insufficient fuel only if we're trying to sell more (negative change)
+                    if (netFuelChange > 0 && newTankLevel < 0) {
+                        throw new Error(`Insufficient fuel in tank. Cannot sell ${netFuelChange}L of fuel. Tank only has ${tank.currentLevel}L available.`);
+                    }
+
+                    await tx.tank.update({
+                        where: { id: tank.id },
+                        data: { currentLevel: newTankLevel }
+                    });
+
+                    if (netFuelChange > 0) {
+                        console.log(`Deducted ${netFuelChange}L from ${tank.name} (fuel type ${fuelTypeId}). New level: ${newTankLevel}L`);
+                    } else if (netFuelChange < 0) {
+                        console.log(`Added ${Math.abs(netFuelChange)}L back to ${tank.name} (fuel type ${fuelTypeId}). New level: ${newTankLevel}L`);
+                    }
+                }
             }
-        }
+        });
 
         res.status(201).json({
             success: true,
@@ -1524,7 +1825,20 @@ app.post('/api/readings/bulk', async (req, res) => {
         });
     } catch (error: any) {
         console.error('Error saving bulk readings:', error);
-        res.status(500).json({ error: error.message });
+
+        // Handle transaction errors with proper status codes
+        if (error.message.includes('Insufficient fuel in tank')) {
+            return res.status(400).json({
+                message: 'Insufficient fuel in tank',
+                error: error.message,
+                details: 'Cannot complete the operation due to insufficient fuel in one or more tanks'
+            });
+        }
+
+        res.status(500).json({
+            error: error.message,
+            details: 'An unexpected error occurred while saving readings'
+        });
     }
 });
 
@@ -1649,7 +1963,7 @@ import logsRouter from './routes/logs';
 app.use('/api/tanks', createTanksRouter(prisma));
 app.use('/api/pumps', createPumpsRouter(prisma));
 app.use('/api/prices', createPricesRouter(prisma));
-app.use('/api/purchases', createPurchasesRouter(prisma));
+app.use('/api/purchases', createPurchasesRouter(prisma, tankValidator));
 app.use('/api/reports', createReportsRouter(prisma));
 app.use('/api/readings', createReadingsRouter(prisma));
 app.use('/api/cash-receipts', createCashReceiptsRouter(prisma));
@@ -1740,7 +2054,7 @@ app.get('/api/reports/debug', async (req, res) => {
         // Calculate what the reports should show
         const totalRevenue = readings.reduce((sum, reading) => sum + Number(reading.revenue), 0);
         const totalLitres = readings.reduce((sum, reading) => {
-            const sold = Number(reading.openingLitres) - Number(reading.closingLitres);
+            const sold = Number(reading.closingLitres) - Number(reading.openingLitres);
             return sum + sold;
         }, 0);
 
