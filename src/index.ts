@@ -469,14 +469,14 @@ app.get('/api/reports/trends', async (req, res) => {
             groupedSales[fuelTypeName].revenue += revenue;
         });
 
-        // Convert to array format for charts
+        // Convert to array format for charts - return in same format as summary endpoint
         const trendData = Object.entries(groupedSales)
             .map(([fuelType, data]) => ({
-                fuelType,
+                name: fuelType, // Use 'name' instead of 'fuelType' to match frontend expectations
                 litres: Math.round(data.litres * 100) / 100, // Round to 2 decimal places
                 revenue: Math.round(data.revenue)
             }))
-            .filter(item => item.litres > 0 || item.revenue > 0) // Filter out zero values
+            .filter(item => item.litres >= 0 || item.revenue >= 0) // Include all items, including zero values
             .sort((a, b) => b.revenue - a.revenue); // Sort by revenue (highest first)
 
         res.json(trendData);
@@ -528,6 +528,34 @@ app.get('/api/reports/summary', async (req, res) => {
         } else if (period === 'thisYear') {
             startDate = new Date(targetDate.getFullYear(), 0, 1);
             endDate = new Date(targetDate.getFullYear(), 11, 31);
+            endDate.setHours(23, 59, 59, 999);
+        } else if (period === '1w') {
+            // Graph period: 1 week
+            startDate = new Date();
+            startDate.setDate(startDate.getDate() - 7);
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date();
+            endDate.setHours(23, 59, 59, 999);
+        } else if (period === '1m') {
+            // Graph period: 1 month
+            startDate = new Date();
+            startDate.setMonth(startDate.getMonth() - 1);
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date();
+            endDate.setHours(23, 59, 59, 999);
+        } else if (period === '6m') {
+            // Graph period: 6 months
+            startDate = new Date();
+            startDate.setMonth(startDate.getMonth() - 6);
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date();
+            endDate.setHours(23, 59, 59, 999);
+        } else if (period === '1yr') {
+            // Graph period: 1 year
+            startDate = new Date();
+            startDate.setFullYear(startDate.getFullYear() - 1);
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date();
             endDate.setHours(23, 59, 59, 999);
         } else {
             // Default to today
